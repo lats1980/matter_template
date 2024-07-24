@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "board/board.h"
+
 #include <platform/CHIPDeviceLayer.h>
 
 struct k_timer;
@@ -22,4 +24,5 @@ public:
 
 private:
 	CHIP_ERROR Init();
+	static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);
 };

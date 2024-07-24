@@ -16,7 +16,9 @@
 #include "dfu/ota/ota_util.h"
 #endif
 
+#include <app-common/zap-generated/attributes/Accessors.h>
 #include <app/server/OnboardingCodesUtil.h>
+#include <app/server/Server.h>
 
 #include <zephyr/logging/log.h>
 
@@ -26,12 +28,33 @@ using namespace ::chip;
 using namespace ::chip::app;
 using namespace ::chip::DeviceLayer;
 
+namespace
+{
+constexpr EndpointId kPlugEndpointId = 1;
+#define APPLICATION_BUTTON_MASK DK_BTN2_MSK
+} /* namespace */
+
+void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
+{
+	if ((APPLICATION_BUTTON_MASK & hasChanged) & state) {
+		Nrf::PostTask(
+			[] {
+					Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Invert();
+					Protocols::InteractionModel::Status status =
+						Clusters::OnOff::Attributes::OnOff::Set(kPlugEndpointId, Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).GetState());
+					if (status != Protocols::InteractionModel::Status::Success) {
+						LOG_ERR("Updating on/off cluster %d failed", kPlugEndpointId);
+					}
+			});
+	}
+}
+
 CHIP_ERROR AppTask::Init()
 {
 	/* Initialize Matter stack */
 	ReturnErrorOnFailure(Nrf::Matter::PrepareServer());
 
-	if (!Nrf::GetBoard().Init()) {
+	if (!Nrf::GetBoard().Init(ButtonEventHandler)) {
 		LOG_ERR("User interface initialization failed.");
 		return CHIP_ERROR_INCORRECT_STATE;
 	}
