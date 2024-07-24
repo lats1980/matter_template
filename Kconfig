@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
-mainmenu "Matter nRF Connect Template Example Application"
+mainmenu "Matter nRF Connect Plug Example Application"
 
 # Sample configuration used for Thread networking
 if NET_L2_OPENTHREAD

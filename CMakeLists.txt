@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.20.0)
 
 find_package(Zephyr HINTS $ENV{ZEPHYR_BASE})
 
-project(matter-template)
+project(matter-plug)
 
 # Enable GNU STD support and initialize the Matter Data Model.
 include(${ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR}/config/nrfconnect/app/enable-gnu-std.cmake)
@@ -32,6 +32,6 @@ chip_configure_data_model(app
     INCLUDE_SERVER
     BYPASS_IDL
     GEN_DIR src/zap-generated
-    ZAP_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/template.zap
+    ZAP_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/plug.zap
 )
 # NORDIC SDK APP END
