@@ -22,6 +22,8 @@ public:
 
 	CHIP_ERROR StartApp();
 
+	void UpdateClusterState();
+
 private:
 	CHIP_ERROR Init();
 	static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);

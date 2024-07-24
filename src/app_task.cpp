@@ -66,6 +66,17 @@ CHIP_ERROR AppTask::Init()
 	return Nrf::Matter::StartServer();
 }
 
+void AppTask::UpdateClusterState()
+{
+	SystemLayer().ScheduleLambda([this] {
+		Protocols::InteractionModel::Status status =
+			Clusters::OnOff::Attributes::OnOff::Set(kPlugEndpointId, Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).GetState());
+		if (status != Protocols::InteractionModel::Status::Success) {
+			LOG_ERR("Updating on/off cluster %d failed", kPlugEndpointId);
+		}
+	});
+}
+
 CHIP_ERROR AppTask::StartApp()
 {
 	ReturnErrorOnFailure(Init());
