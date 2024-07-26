@@ -39,18 +39,25 @@ void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChan
 	if ((APPLICATION_BUTTON_MASK & hasChanged) & state) {
 		Nrf::PostTask(
 			[] {
+					bool value;
 					Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Invert();
+					value = Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).GetState();
 					Protocols::InteractionModel::Status status =
-						Clusters::OnOff::Attributes::OnOff::Set(kPlugEndpointId, Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).GetState());
+						Clusters::OnOff::Attributes::OnOff::Set(kPlugEndpointId, value);
 					if (status != Protocols::InteractionModel::Status::Success) {
 						LOG_ERR("Updating on/off cluster %d failed", kPlugEndpointId);
 					}
+					AppTask::Instance().GetRelay().Set(value);
 			});
 	}
 }
 
 CHIP_ERROR AppTask::Init()
 {
+	if(mRelay.Init() != 0) {
+		return CHIP_ERROR_INCORRECT_STATE;
+	}
+
 	/* Initialize Matter stack */
 	ReturnErrorOnFailure(Nrf::Matter::PrepareServer());
 

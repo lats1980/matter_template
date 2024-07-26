@@ -7,6 +7,7 @@
 #pragma once
 
 #include "board/board.h"
+#include "relay_widget.h"
 
 #include <platform/CHIPDeviceLayer.h>
 
@@ -23,8 +24,10 @@ public:
 	CHIP_ERROR StartApp();
 
 	void UpdateClusterState();
+	RelayWidget GetRelay() { return mRelay; }
 
 private:
+	RelayWidget mRelay;
 	CHIP_ERROR Init();
 	static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);
 };

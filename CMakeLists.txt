@@ -27,6 +27,7 @@ target_sources(app PRIVATE
     src/app_task.cpp
     src/main.cpp
     src/zcl_callbacks.cpp
+    src/relay_widget.cpp
 )
 
 chip_configure_data_model(app
