@@ -8,7 +8,7 @@ Matter: Template
    :depth: 2
 
 This sample demonstrates a minimal implementation of the :ref:`Matter <ug_matter>` application layer.
-This basic implementation enables the commissioning on the device, which allows it to join a Matter network built on top of a low-power, 802.15.4 Thread network or on top of a Wi-Fi network.
+This basic implementation enables the commissioning on the device, which allows it to join a Matter network built on top of a low-power, 802.15.4 Thread network or on top of a Wi-Fi® network.
 Support for both Thread and Wi-Fi is mutually exclusive and depends on the hardware platform, so only one protocol can be supported for a specific Matter device.
 In case of Thread, this device works as a Thread :ref:`Minimal End Device <thread_ot_device_types>`.
 
@@ -32,8 +32,8 @@ IPv6 network support
 
 The development kits for this sample offer the following IPv6 network support for Matter:
 
-* Matter over Thread is supported for ``nrf52840dk/nrf52840``, ``nrf5340dk/nrf5340/cpuapp``, ``nrf21540dk/nrf52840``, ``nrf54l15pdk/nrf54l15/cpuapp``, and ``nrf54h20dk/nrf54h20/cpuapp``.
-* Matter over Wi-Fi is supported for ``nrf5340dk/nrf5340/cpuapp`` or ``nrf54h20dk/nrf54h20/cpuapp`` with the ``nrf7002ek`` shield attached, or for ``nrf7002dk/nrf5340/cpuapp``.
+* Matter over Thread is supported for the ``nrf52840dk/nrf52840``, ``nrf5340dk/nrf5340/cpuapp``, ``nrf21540dk/nrf52840``, ``nrf54l15dk/nrf54l15/cpuapp``, and ``nrf54l15dk/nrf54l10/cpuapp`` board targets.
+* Matter over Wi-Fi is supported for the ``nrf5340dk/nrf5340/cpuapp`` board target with the ``nrf7002ek`` shield attached, or for the ``nrf7002dk/nrf5340/cpuapp`` board target.
 
 Overview
 ********
@@ -49,7 +49,7 @@ Remote testing in a network
 
 Testing in either a Matter-enabled Thread or a Wi-Fi network requires a Matter controller that you can configure on PC or mobile device.
 By default, the Matter accessory device has IPv6 networking disabled.
-You must pair the device with the Matter controller over Bluetooth® LE to get the configuration from the controller to use the device within a Thread or a Wi-Fi network.
+You must pair the device with the Matter controller over Bluetooth LE to get the configuration from the controller to use the device within a Thread or a Wi-Fi network.
 You can enable the controller after :ref:`building and running the sample <matter_template_network_testing>`.
 
 To pair the device, the controller must get the :ref:`matter_template_network_mode_onboarding` from the Matter accessory device and commission the device into the network.
@@ -108,36 +108,53 @@ Matter template custom configurations
     :start-after: matter_light_bulb_sample_configuration_file_types_start
     :end-before: matter_light_bulb_sample_configuration_file_types_end
 
-Device Firmware Upgrade support
-===============================
+Matter template with Trusted Firmware-M
+=======================================
 
-.. include:: ../lock/README.rst
-    :start-after: matter_door_lock_sample_build_with_dfu_start
-    :end-before: matter_door_lock_sample_build_with_dfu_end
+.. matter_template_build_with_tfm_start
 
-Alternatively, for the nRF54L15 PDK, the DFU can be configured to only use the internal MRAM for storage.
-This means that both the currently running firmware and the new firmware to be updated will be stored within the device's internal flash memory.
-This configuration is only available for the :ref:`release configuration <matter_template_custom_configs>`.
+The sample supports using :ref:`Trusted Firmware-M <ug_tfm>` on the nRF54L15 DK.
+The memory map of the sample has been aligned to meet the :ref:`ug_tfm_partition_alignment_requirements`.
 
-The following is an example command to build the sample on the nRF54L15 PDK with support for Matter OTA DFU and DFU over Bluetooth® SMP, and using internal MRAM only:
+You can build the sample with Trusted Firmware-M support by adding the ``ns`` suffix to the ``nrf54l15dk/nrf54l15/cpuapp`` board target.
+
+For example:
 
 .. code-block:: console
 
-    west build -p -b nrf54l15pdk/nrf54l15/cpuapp -- -DFILE_SUFFIX=release -DCONFIG_CHIP_DFU_OVER_BT_SMP=y -DPM_STATIC_YML_FILE=pm_static_nrf54l15pdk_nrf54l15_cpuapp_internal.yml -Dmcuboot_EXTRA_CONF_FILE=<absolute_path_to_the_template_sample>/sysbuild/mcuboot/boards/nrf54l15pdk_nrf54l15_cpuapp_internal.conf -Dmcuboot_EXTRA_DTC_OVERLAY_FILE=<absolute_path_to_the_template_sample>/sysbuild/mcuboot/boards/nrf54l15pdk_nrf54l15_cpuapp_internal.overlay
+    west build -p -b nrf54l15dk/nrf54l15/cpuapp/ns
 
-Note that in this case, the size of the application partition is half of what it would be when using a configuration with external flash memory support.
+.. matter_template_build_with_tfm_end
 
-FEM support
-===========
+.. |Bluetooth| replace:: Bluetooth
 
-.. include:: /includes/sample_fem_support.txt
+.. include:: /includes/advanced_conf_matter.txt
 
-Factory data support
-====================
+Matter template using only internal memory
+==========================================
 
-.. include:: ../lock/README.rst
-    :start-after: matter_door_lock_sample_factory_data_start
-    :end-before: matter_door_lock_sample_factory_data_end
+For the nRF54L15 DK, you can configure the sample to use only the internal RRAM for storage.
+It applies to the DFU as well, which means that both the currently running firmware and the new firmware to be updated will be stored within the device's internal RRAM memory.
+See the Device Firmware Upgrade support section above for information about the DFU process.
+
+The DFU image can fit in the internal flash memory thanks to the usage of :ref:`MCUboot image compression<ug_matter_device_bootloader_image_compression>`.
+
+This configuration is disabled by default for the Matter template sample.
+To enable it, set the ``FILE_SUFFIX`` CMake option to ``internal``.
+
+The following is an example command to build the sample for the nRF54L15 DK with support for Matter OTA DFU and DFU over Bluetooth SMP, and using internal RRAM only:
+
+.. code-block:: console
+
+    west build -p -b nrf54l15dk/nrf54l15/cpuapp -- -DCONFIG_CHIP_DFU_OVER_BT_SMP=y -DFILE_SUFFIX=internal
+
+To build the sample for the same purpose, but in the ``release`` configuration, use the following command:
+
+.. code-block:: console
+
+    west build -p -b nrf54l15dk/nrf54l15/cpuapp -- -DCONFIG_CHIP_DFU_OVER_BT_SMP=y -DFILE_SUFFIX=internal -Dtemplate_EXTRA_CONF_FILE=prj_release.conf
+
+In this case, the size of the MCUboot secondary partition used for storing the new application image is approximately 30%-40% smaller than it would be when using a configuration with external flash memory support.
 
 User interface
 **************
@@ -172,15 +189,10 @@ Building and running
 
 .. include:: /includes/build_and_run.txt
 
-.. matter_template_build_wifi_nrf54h20_start
+.. |sample_or_app| replace:: sample
+.. |ipc_radio_dir| replace:: :file:`sysbuild/ipc_radio`
 
-To use nrf54H20 DK with the ``nrf7002ek`` shield attached (2.4 GHz or 5 GHz), follow the :ref:`ug_nrf7002eb_nrf54h20dk_gs` user guide to connect all required pins and then use the following command to build the sample:
-
-.. matter_template_build_wifi_nrf54h20_end
-
-.. code-block:: console
-
-    west build -b nrf54h20dk/nrf54h20/cpuapp -p -- -DSB_CONFIG_WIFI_NRF700X=y -DCONFIG_CHIP_WIFI=y -Dtemplate_SHIELD=nrf700x_nrf54h20dk
+.. include:: /includes/ipc_radio_conf.txt
 
 Selecting a configuration
 =========================
