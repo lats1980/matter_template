@@ -84,6 +84,7 @@
     0x00000030, /* Cluster: General Commissioning, Attribute: Breadcrumb, Privilege: administer */ \
     0x00000031, /* Cluster: Network Commissioning, Attribute: InterfaceEnabled, Privilege: administer */ \
     0x0000003F, /* Cluster: Group Key Management, Attribute: GroupKeyMap, Privilege: manage */ \
+    0x00000406, /* Cluster: Occupancy Sensing, Attribute: HoldTime, Privilege: manage */ \
 }
 
 // Parallel array data (cluster, *attribute*, privilege) for write attribute
@@ -96,6 +97,7 @@
     0x00000000, /* Cluster: General Commissioning, Attribute: Breadcrumb, Privilege: administer */ \
     0x00000004, /* Cluster: Network Commissioning, Attribute: InterfaceEnabled, Privilege: administer */ \
     0x00000000, /* Cluster: Group Key Management, Attribute: GroupKeyMap, Privilege: manage */ \
+    0x00000003, /* Cluster: Occupancy Sensing, Attribute: HoldTime, Privilege: manage */ \
 }
 
 // Parallel array data (cluster, attribute, *privilege*) for write attribute
@@ -108,12 +110,15 @@
     chip::Access::Privilege::kAdminister, /* Cluster: General Commissioning, Attribute: Breadcrumb, Privilege: administer */ \
     chip::Access::Privilege::kAdminister, /* Cluster: Network Commissioning, Attribute: InterfaceEnabled, Privilege: administer */ \
     chip::Access::Privilege::kManage, /* Cluster: Group Key Management, Attribute: GroupKeyMap, Privilege: manage */ \
+    chip::Access::Privilege::kManage, /* Cluster: Occupancy Sensing, Attribute: HoldTime, Privilege: manage */ \
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Parallel array data (*cluster*, command, privilege) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__CLUSTER { \
+    0x00000003, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
+    0x00000003, /* Cluster: Identify, Command: TriggerEffect, Privilege: manage */ \
     0x00000030, /* Cluster: General Commissioning, Command: ArmFailSafe, Privilege: administer */ \
     0x00000030, /* Cluster: General Commissioning, Command: SetRegulatoryConfig, Privilege: administer */ \
     0x00000030, /* Cluster: General Commissioning, Command: CommissioningComplete, Privilege: administer */ \
@@ -143,6 +148,8 @@
 
 // Parallel array data (cluster, *command*, privilege) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__COMMAND { \
+    0x00000000, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
+    0x00000040, /* Cluster: Identify, Command: TriggerEffect, Privilege: manage */ \
     0x00000000, /* Cluster: General Commissioning, Command: ArmFailSafe, Privilege: administer */ \
     0x00000002, /* Cluster: General Commissioning, Command: SetRegulatoryConfig, Privilege: administer */ \
     0x00000004, /* Cluster: General Commissioning, Command: CommissioningComplete, Privilege: administer */ \
@@ -172,6 +179,8 @@
 
 // Parallel array data (cluster, command, *privilege*) for invoke command
 #define GENERATED_ACCESS_INVOKE_COMMAND__PRIVILEGE { \
+    chip::Access::Privilege::kManage, /* Cluster: Identify, Command: Identify, Privilege: manage */ \
+    chip::Access::Privilege::kManage, /* Cluster: Identify, Command: TriggerEffect, Privilege: manage */ \
     chip::Access::Privilege::kAdminister, /* Cluster: General Commissioning, Command: ArmFailSafe, Privilege: administer */ \
     chip::Access::Privilege::kAdminister, /* Cluster: General Commissioning, Command: SetRegulatoryConfig, Privilege: administer */ \
     chip::Access::Privilege::kAdminister, /* Cluster: General Commissioning, Command: CommissioningComplete, Privilege: administer */ \

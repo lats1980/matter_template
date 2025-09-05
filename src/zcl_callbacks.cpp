@@ -1,0 +1,73 @@
+/*
+ * Copyright (c) 2024 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+#include "app_task.h"
+#include "board/board.h"
+
+#include <app-common/zap-generated/attributes/Accessors.h>
+#include <app-common/zap-generated/ids/Attributes.h>
+#include <app-common/zap-generated/ids/Clusters.h>
+#include <app/ConcreteAttributePath.h>
+
+#include <lib/support/logging/CHIPLogging.h>
+
+#include <app/clusters/occupancy-sensor-server/occupancy-hal.h>
+#include <app/clusters/occupancy-sensor-server/occupancy-sensor-server.h>
+
+#include <app/util/attribute-storage.h>
+
+using namespace ::chip;
+using namespace ::chip::app;
+using namespace ::chip::app::Clusters;
+using namespace ::chip::app::Clusters::OccupancySensing;
+
+void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &attributePath, uint8_t type,
+				       uint16_t size, uint8_t *value)
+{
+    EndpointId endpoint     = attributePath.mEndpointId;
+    ClusterId clusterId     = attributePath.mClusterId;
+    AttributeId attributeId = attributePath.mAttributeId;
+    ChipLogProgress(Zcl, "MatterPostAttributeChangeCallback - Cluster ID: " ChipLogFormatMEI
+            		", EndPoint ID: '0x%02x', Attribute ID: " ChipLogFormatMEI,
+            		ChipLogValueMEI(clusterId), endpoint, ChipLogValueMEI(attributeId));
+
+	if (OccupancySensorPIR::Instance().GetEndpointId() != endpoint) {
+		// Not our endpoint, ignore
+		return;
+	}
+
+	if (clusterId == OccupancySensing::Id && attributeId == OccupancySensing::Attributes::Occupancy::Id) {
+		uint8_t occupancy = *value;
+		ChipLogProgress(Zcl, "Cluster OccupancySensing: attribute Occupancy set to %" PRIu8 "", occupancy);
+
+		if (occupancy & (uint8_t)OccupancySensing::OccupancyBitmap::kOccupied) {
+			ChipLogProgress(Zcl, "Occupancy State: OCCUPIED");
+			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(*value);
+		} else {
+			ChipLogProgress(Zcl, "Occupancy State: UNOCCUPIED");
+			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(*value);
+		}
+	}
+}
+
+void emberAfOccupancySensingClusterInitCallback(EndpointId endpointId)
+{
+	if (OccupancySensorPIR::Instance().GetEndpointId() != endpointId) {
+		// Not our endpoint, ignore
+		return;
+	}
+
+	uint16_t holdTime = CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
+	OccupancySensing::Structs::HoldTimeLimitsStruct::Type holdTimeLimits = {
+		.holdTimeMin     = CONFIG_HOLD_TIME_LIMIT_MIN_SEC,
+		.holdTimeMax     = CONFIG_HOLD_TIME_LIMIT_MAX_SEC,
+		.holdTimeDefault = holdTime,
+	};
+
+	SetHoldTimeLimits(endpointId, holdTimeLimits);
+
+	SetHoldTime(endpointId, holdTime);
+}

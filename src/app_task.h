@@ -7,6 +7,7 @@
 #pragma once
 
 #include <platform/CHIPDeviceLayer.h>
+#include "occupancy_sensor_pir.h"
 
 struct k_timer;
 

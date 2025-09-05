@@ -5,6 +5,35 @@
 #
 mainmenu "Matter nRF Connect Template Example Application"
 
+config SIMULATED_PIR_SENSOR
+	bool "Simulated PIR sensor with button"
+	help
+	  Enable this option to simulate PIR sensor input using a button.
+
+config HOLD_TIME_LIMIT_MIN_SEC
+	int "PIR sensor hold time limit (min)"
+	default 1
+	range 1 600
+	help
+	  Minimum time in seconds that the occupancy state remains "occupied"
+	  after motion is detected.
+
+config HOLD_TIME_LIMIT_MAX_SEC
+	int "PIR sensor hold time limit (max)"
+	default 600
+	range 1 600
+	help
+	  Maximum time in seconds that the occupancy state remains "occupied"
+	  after motion is detected.
+
+config HOLD_TIME_LIMIT_DEFAULT_SEC
+	int "PIR sensor hold time limit (default)"
+	default 10
+	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
+	help
+	  Default time in seconds that the occupancy state remains "occupied"
+	  after motion is detected.
+
 # Sample configuration used for Thread networking
 if OPENTHREAD
 
@@ -15,6 +44,14 @@ endchoice
 choice OPENTHREAD_DEVICE_TYPE
 	default OPENTHREAD_MTD
 endchoice
+
+config CHIP_ENABLE_ICD_SUPPORT
+	default y
+
+# Reduce Thread TX output power to 0 dBm for SED device
+config OPENTHREAD_DEFAULT_TX_POWER
+	int
+	default 0
 
 endif # OPENTHREAD
 
