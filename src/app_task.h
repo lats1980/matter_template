@@ -8,6 +8,7 @@
 
 #include <platform/CHIPDeviceLayer.h>
 #include "occupancy_sensor_pir.h"
+#include "occupancy_sensor_rfs.h"
 
 struct k_timer;
 

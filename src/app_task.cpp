@@ -11,6 +11,7 @@
 #include "board/board.h"
 #include "lib/core/CHIPError.h"
 #include "lib/support/CodeUtils.h"
+#include "channel_sounding_ras_initiator.h"
 
 #include <setup_payload/OnboardingCodesUtil.h>
 
@@ -38,6 +39,12 @@ CHIP_ERROR AppTask::Init()
 
 	/* Initialize PIR occupancy sensor */
 	ReturnErrorOnFailure(OccupancySensorPIR::Instance().Init());
+
+	/* Initialize RF Sensing occupancy sensor */
+	ReturnErrorOnFailure(OccupancySensorRFS::Instance().Init());
+	
+	/* Start RF Sensing monitoring */
+	ReturnErrorOnFailure(OccupancySensorRFS::Instance().StartRFSensing());
 
 	return Nrf::Matter::StartServer();
 }

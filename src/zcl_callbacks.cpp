@@ -27,14 +27,15 @@ using namespace ::chip::app::Clusters::OccupancySensing;
 void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &attributePath, uint8_t type,
 				       uint16_t size, uint8_t *value)
 {
-    EndpointId endpoint     = attributePath.mEndpointId;
+    EndpointId endpointId     = attributePath.mEndpointId;
     ClusterId clusterId     = attributePath.mClusterId;
     AttributeId attributeId = attributePath.mAttributeId;
     ChipLogProgress(Zcl, "MatterPostAttributeChangeCallback - Cluster ID: " ChipLogFormatMEI
             		", EndPoint ID: '0x%02x', Attribute ID: " ChipLogFormatMEI,
-            		ChipLogValueMEI(clusterId), endpoint, ChipLogValueMEI(attributeId));
+            		ChipLogValueMEI(clusterId), endpointId, ChipLogValueMEI(attributeId));
 
-	if (OccupancySensorPIR::Instance().GetEndpointId() != endpoint) {
+	if (OccupancySensorPIR::Instance().GetEndpointId() != endpointId &&
+	    OccupancySensorRFS::Instance().GetEndpointId() != endpointId) {
 		// Not our endpoint, ignore
 		return;
 	}
@@ -45,17 +46,21 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 
 		if (occupancy & (uint8_t)OccupancySensing::OccupancyBitmap::kOccupied) {
 			ChipLogProgress(Zcl, "Occupancy State: OCCUPIED");
-			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(*value);
 		} else {
 			ChipLogProgress(Zcl, "Occupancy State: UNOCCUPIED");
-			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED2).Set(*value);
+		}
+		if (endpointId == OccupancySensorPIR::Instance().GetEndpointId()) {
+			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED3).Set(*value);
+		} else if (endpointId == OccupancySensorRFS::Instance().GetEndpointId()) {
+			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED4).Set(*value);
 		}
 	}
 }
 
 void emberAfOccupancySensingClusterInitCallback(EndpointId endpointId)
 {
-	if (OccupancySensorPIR::Instance().GetEndpointId() != endpointId) {
+	if (OccupancySensorPIR::Instance().GetEndpointId() != endpointId &&
+	    OccupancySensorRFS::Instance().GetEndpointId() != endpointId) {
 		// Not our endpoint, ignore
 		return;
 	}

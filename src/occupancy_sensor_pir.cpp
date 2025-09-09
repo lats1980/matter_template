@@ -17,6 +17,8 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
 
+#include "channel_sounding_ras_initiator.h"
+
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
 using namespace chip;
@@ -78,8 +80,8 @@ CHIP_ERROR OccupancySensorPIR::Init()
     k_work_init(&mPirWork, PirWorkHandler);
 
     // Initialize Matter OccupancySensing cluster instance
-    static std::unique_ptr<chip::app::Clusters::OccupancySensing::Instance> occupancySensorInstance;
-    occupancySensorInstance = std::make_unique<chip::app::Clusters::OccupancySensing::Instance>(BitMask<OccupancySensing::Feature, uint32_t>(OccupancySensing::Feature::kPassiveInfrared));
+    static std::unique_ptr<OccupancySensing::Instance> occupancySensorInstance;
+    occupancySensorInstance = std::make_unique<OccupancySensing::Instance>(BitMask<OccupancySensing::Feature, uint32_t>(OccupancySensing::Feature::kPassiveInfrared));
 
     mClusterInstance = occupancySensorInstance.get();
     
@@ -213,7 +215,6 @@ void OccupancySensorPIR::PirWorkHandler(k_work *work)
 {
     // Get the sensor instance from the work structure
     OccupancySensorPIR *sensor = CONTAINER_OF(work, OccupancySensorPIR, mPirWork);
-
     // Read the current GPIO state to confirm the interrupt was valid
     int pinValue = gpio_pin_get(sensor->mGpioDevice, kPirPin);
     LOG_INF("GPIO pin value: %d", pinValue);

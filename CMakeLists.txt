@@ -34,6 +34,8 @@ target_sources(app PRIVATE
     src/main.cpp
     src/zcl_callbacks.cpp
     src/occupancy_sensor_pir.cpp
+    src/occupancy_sensor_rfs.cpp
+    src/channel_sounding_ras_initiator.c
 )
 
 ncs_configure_data_model()

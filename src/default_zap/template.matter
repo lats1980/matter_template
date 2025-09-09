@@ -1794,5 +1794,47 @@ endpoint 1 {
     ram      attribute clusterRevision default = 5;
   }
 }
+endpoint 2 {
+  device type ma_occupancysensor = 263, version 5;
+
+
+  server cluster Identify {
+    ram      attribute identifyTime default = 0x0;
+    ram      attribute identifyType;
+    callback attribute generatedCommandList;
+    callback attribute acceptedCommandList;
+    callback attribute attributeList;
+    ram      attribute featureMap default = 0;
+    ram      attribute clusterRevision default = 5;
+
+    handle command Identify;
+    handle command TriggerEffect;
+  }
+
+  server cluster Descriptor {
+    callback attribute deviceTypeList;
+    callback attribute serverList;
+    callback attribute clientList;
+    callback attribute partsList;
+    callback attribute generatedCommandList;
+    callback attribute acceptedCommandList;
+    callback attribute attributeList;
+    callback attribute featureMap;
+    callback attribute clusterRevision;
+  }
+
+  server cluster OccupancySensing {
+    ram      attribute occupancy;
+    ram      attribute occupancySensorType;
+    ram      attribute occupancySensorTypeBitmap;
+    callback attribute holdTime;
+    callback attribute holdTimeLimits;
+    callback attribute generatedCommandList;
+    callback attribute acceptedCommandList;
+    callback attribute attributeList;
+    callback attribute featureMap;
+    ram      attribute clusterRevision default = 5;
+  }
+}
 
 
