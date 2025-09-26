@@ -61,10 +61,12 @@ CHIP_ERROR OccupancySensorRFS::Init()
     k_work_init(&mRfsWork, RfsWorkHandler);
     k_timer_init(&mRfsTimer, RfsTimerCallback, nullptr);
 
-    // Initialize Matter OccupancySensing cluster instance
-    static std::unique_ptr<OccupancySensing::Instance> occupancySensorInstance;
-    occupancySensorInstance = std::make_unique<OccupancySensing::Instance>(BitMask<OccupancySensing::Feature, uint32_t>(OccupancySensing::Feature::kRFSensing));
-    mClusterInstance = occupancySensorInstance.get();
+    // Initialize Matter OccupancySensing cluster instance with RF Sensing feature
+    CHIP_ERROR err = InitializeClusterInstance(BitMask<OccupancySensing::Feature, uint32_t>(OccupancySensing::Feature::kRFSensing));
+    if (err != CHIP_NO_ERROR) {
+        return err;
+    }
+    
     ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(MatterEventHandler, 0));
 
     mInitialized = true;
@@ -108,60 +110,6 @@ void OccupancySensorRFS::StopRFSensing()
     LOG_INF("RF Sensing monitoring stopped");
 }
 
-CHIP_ERROR OccupancySensorRFS::SetOccupancyState(bool occupied)
-{
-    if (!mInitialized) {
-        LOG_ERR("RF sensing not initialized");
-        return CHIP_ERROR_INCORRECT_STATE;
-    }
-
-    if (occupied)
-    {
-        uint16_t * holdTime = chip::app::Clusters::OccupancySensing::GetHoldTimeForEndpoint(kOccupancySensorEndpointId);
-        if (holdTime != nullptr)
-        {
-            CHIP_ERROR err = chip::DeviceLayer::SystemLayer().StartTimer(
-                chip::System::Clock::Seconds16(*holdTime), OccupancySensorRFS::OccupancyPresentTimerHandler,
-                reinterpret_cast<void *>(static_cast<uintptr_t>(kOccupancySensorEndpointId)));
-            LOG_INF("Start HoldTime timer");
-            if (CHIP_NO_ERROR != err)
-            {
-                LOG_INF("Failed to start HoldTime timer.");
-            }
-        }
-    }
-    chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
-    Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(kOccupancySensorEndpointId, &currentOccupancy);
-    VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
-
-    if (static_cast<BitMask<chip::app::Clusters::OccupancySensing::OccupancyBitmap>>(occupied) == currentOccupancy) {
-        // No state change needed
-        return CHIP_NO_ERROR;
-    }
-    LOG_INF("RF sensing state change: UNOCCUPIED -> OCCUPIED");
-
-    status = chip::app::Clusters::OccupancySensing::Attributes::Occupancy::Set(
-        kOccupancySensorEndpointId, (uint8_t)occupied);
-    if (status != Protocols::InteractionModel::Status::Success)
-    {
-        LOG_ERR("Failed to set occupancy attribute: %d", static_cast<int>(status));
-        return CHIP_ERROR_INTERNAL;
-    }
-
-    // Send OccupancyChanged event
-    chip::app::Clusters::OccupancySensing::Events::OccupancyChanged::Type event;
-    event.occupancy = occupied ? chip::app::Clusters::OccupancySensing::OccupancyBitmap::kOccupied : static_cast<chip::app::Clusters::OccupancySensing::OccupancyBitmap>(0);
-
-    EventNumber eventNumber;
-    CHIP_ERROR err = LogEvent(event, kOccupancySensorEndpointId, eventNumber);
-    if (err != CHIP_NO_ERROR) {
-        LOG_ERR("Failed to log occupancy event: %" CHIP_ERROR_FORMAT, err.Format());
-    } else {
-        LOG_INF("OccupancyChanged event sent (EventNumber: %" PRIu64 ")", eventNumber);
-    }
-
-    return CHIP_NO_ERROR;
-}
 
 bool OccupancySensorRFS::CheckRFSensing()
 {
@@ -184,16 +132,18 @@ bool OccupancySensorRFS::CheckRFSensing()
 
 void OccupancySensorRFS::RfsWorkHandler(k_work *work)
 {
-    // Get the sensor instance from the work structure
-    OccupancySensorRFS *sensor = CONTAINER_OF(work, OccupancySensorRFS, mRfsWork);
+    ARG_UNUSED(work);
+    
+    // Get the sensor instance using singleton pattern
+    OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
     
     LOG_DBG("RF Sensing work handler triggered");
     
     // Check RF sensing data and determine occupancy
     bool occupied = sensor->CheckRFSensing();
     
-    // Update occupancy state if there's a change
-    if (occupied != sensor->mOccupied) {
+    // Update occupancy state if occupied
+    if (occupied) {
         Nrf::PostTask([sensor, occupied] { 
             CHIP_ERROR err = sensor->SetOccupancyState(occupied);
             if (err != CHIP_NO_ERROR) {
@@ -214,40 +164,3 @@ void OccupancySensorRFS::RfsTimerCallback(k_timer *timer)
     k_work_submit(&sensor->mRfsWork);
 }
 
-void OccupancySensorRFS::OccupancyPresentTimerHandler(System::Layer * systemLayer, void * appState)
-{
-    EndpointId endpointId = static_cast<EndpointId>(reinterpret_cast<uintptr_t>(appState));
-    chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
-
-    Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(endpointId, &currentOccupancy);
-    VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
-
-    uint8_t clearValue = 0;
-    if (!currentOccupancy.Has(Clusters::OccupancySensing::OccupancyBitmap::kOccupied))
-    {
-        return;
-    }
-
-    status = OccupancySensing::Attributes::Occupancy::Set(endpointId, clearValue);
-    if (status != Protocols::InteractionModel::Status::Success)
-    {
-        LOG_ERR("Failed to set occupancy state.");
-    }
-    else
-    {
-        LOG_ERR("Set Occupancy attribute to clear");
-    }
-
-    // Send OccupancyChanged event
-    chip::app::Clusters::OccupancySensing::Events::OccupancyChanged::Type event;
-    event.occupancy = clearValue ? chip::app::Clusters::OccupancySensing::OccupancyBitmap::kOccupied : static_cast<chip::app::Clusters::OccupancySensing::OccupancyBitmap>(0);
-
-    EventNumber eventNumber;
-    CHIP_ERROR err = LogEvent(event, kOccupancySensorEndpointId, eventNumber);
-    if (err != CHIP_NO_ERROR) {
-        LOG_ERR("Failed to log occupancy event: %" CHIP_ERROR_FORMAT, err.Format());
-    } else {
-        LOG_INF("OccupancyChanged event sent (EventNumber: %" PRIu64 ")", eventNumber);
-    }
-    LOG_INF("RF sensing state change: OCCUPIED -> UNOCCUPIED");
-}

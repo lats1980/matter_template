@@ -33,6 +33,7 @@ target_sources(app PRIVATE
     src/app_task.cpp
     src/main.cpp
     src/zcl_callbacks.cpp
+    src/occupancy_sensor_base.cpp
     src/occupancy_sensor_pir.cpp
     src/occupancy_sensor_rfs.cpp
     src/channel_sounding_ras_initiator.c

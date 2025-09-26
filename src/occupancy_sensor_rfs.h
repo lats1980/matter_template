@@ -6,17 +6,17 @@
 
 #pragma once
 
-#include <platform/CHIPDeviceLayer.h>
-#include <app/clusters/occupancy-sensor-server/occupancy-sensor-server.h>
+#include "occupancy_sensor_base.h"
 #include <zephyr/kernel.h>
 
 /**
  * @brief RF Sensing Occupancy Sensor implementation for Matter
  * 
  * This class implements an RF Sensing occupancy sensor for Matter using
- * Channel Sounding IFFT data for occupancy detection.
+ * Channel Sounding IFFT data for occupancy detection, inheriting common
+ * functionality from OccupancySensorBase.
  */
-class OccupancySensorRFS {
+class OccupancySensorRFS : public OccupancySensorBase {
 public:
     /**
      * @brief Get the singleton instance
@@ -35,31 +35,14 @@ public:
      * 
      * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
      */
-    CHIP_ERROR Init();
-
-    /**
-     * @brief Set the occupancy state
-     * 
-     * Updates the occupancy attribute and sends OccupancyChanged events
-     * 
-     * @param occupied true if occupied, false if unoccupied
-     * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
-     */
-    CHIP_ERROR SetOccupancyState(bool occupied);
-
-    /**
-     * @brief Get the current occupancy state
-     * 
-     * @return true if occupied, false if unoccupied
-     */
-    bool IsOccupied() const { return mOccupied; }
+    CHIP_ERROR Init() override;
 
     /**
      * @brief Get the endpoint ID for the occupancy sensor
      * 
      * @return chip::EndpointId The endpoint ID
      */
-    chip::EndpointId GetEndpointId() const { return kOccupancySensorEndpointId; }
+    chip::EndpointId GetEndpointId() const override { return kOccupancySensorEndpointId; }
 
     /**
      * @brief Start RF sensing monitoring
@@ -106,12 +89,6 @@ private:
      */
     static void RfsTimerCallback(k_timer *timer);
 
-    /**
-     * @brief Timer callback for occupancy timeout
-     * 
-     * Called when the occupancy timeout expires to set state to unoccupied
-     */
-    static void OccupancyPresentTimerHandler(chip::System::Layer * systemLayer, void * appState);
 
     /**
      * @brief Check IFFT values and determine occupancy
@@ -133,10 +110,5 @@ private:
     struct k_timer mUnoccupiedTimer;
     
     // State tracking
-    bool mOccupied = false;
-    bool mInitialized = false;
     bool mRfSensingActive = false;
-    
-    // Matter cluster instance
-    chip::app::Clusters::OccupancySensing::Instance *mClusterInstance = nullptr;
 };

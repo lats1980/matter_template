@@ -79,15 +79,9 @@ CHIP_ERROR OccupancySensorPIR::Init()
     // Initialize work queue and timer for deferred processing
     k_work_init(&mPirWork, PirWorkHandler);
 
-    // Initialize Matter OccupancySensing cluster instance
-    static std::unique_ptr<OccupancySensing::Instance> occupancySensorInstance;
-    occupancySensorInstance = std::make_unique<OccupancySensing::Instance>(BitMask<OccupancySensing::Feature, uint32_t>(OccupancySensing::Feature::kPassiveInfrared));
-
-    mClusterInstance = occupancySensorInstance.get();
-    
-    CHIP_ERROR err = mClusterInstance->Init();
+    // Initialize Matter OccupancySensing cluster instance with PIR feature
+    CHIP_ERROR err = InitializeClusterInstance(BitMask<OccupancySensing::Feature, uint32_t>(OccupancySensing::Feature::kPassiveInfrared));
     if (err != CHIP_NO_ERROR) {
-        LOG_ERR("Failed to initialize OccupancySensing cluster: %" CHIP_ERROR_FORMAT, err.Format());
         return err;
     }
 
@@ -97,114 +91,17 @@ CHIP_ERROR OccupancySensorPIR::Init()
     return CHIP_NO_ERROR;
 }
 
-CHIP_ERROR OccupancySensorPIR::SetOccupancyState(bool occupied)
-{
-    if (!mInitialized) {
-        LOG_ERR("PIR sensor not initialized");
-        return CHIP_ERROR_INCORRECT_STATE;
-    }
 
-    if (occupied)
-    {
-        uint16_t * holdTime = chip::app::Clusters::OccupancySensing::GetHoldTimeForEndpoint(kOccupancySensorEndpointId);
-        if (holdTime != nullptr)
-        {
-            CHIP_ERROR err = chip::DeviceLayer::SystemLayer().StartTimer(
-                chip::System::Clock::Seconds16(*holdTime), OccupancySensorPIR::OccupancyPresentTimerHandler,
-                reinterpret_cast<void *>(static_cast<uintptr_t>(kOccupancySensorEndpointId)));
-            LOG_INF("Start HoldTime timer");
-            if (CHIP_NO_ERROR != err)
-            {
-                LOG_INF("Failed to start HoldTime timer.");
-            }
-        }
-    }
-    chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
-    Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(kOccupancySensorEndpointId, &currentOccupancy);
-    VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
 
-    if (static_cast<BitMask<chip::app::Clusters::OccupancySensing::OccupancyBitmap>>(occupied) == currentOccupancy) {
-        // No state change needed
-        return CHIP_NO_ERROR;
-    }
-    LOG_INF("PIR sensor state change: UNOCCUPIED -> OCCUPIED");
-
-    status = chip::app::Clusters::OccupancySensing::Attributes::Occupancy::Set(
-        kOccupancySensorEndpointId, (uint8_t)occupied);
-    if (status != Protocols::InteractionModel::Status::Success)
-    {
-        LOG_ERR("Failed to set occupancy attribute: %d", static_cast<int>(status));
-        return CHIP_ERROR_INTERNAL;
-    }
-
-    // Send OccupancyChanged event
-    chip::app::Clusters::OccupancySensing::Events::OccupancyChanged::Type event;
-    event.occupancy = occupied ? chip::app::Clusters::OccupancySensing::OccupancyBitmap::kOccupied : static_cast<chip::app::Clusters::OccupancySensing::OccupancyBitmap>(0);
-
-    EventNumber eventNumber;
-    CHIP_ERROR err = LogEvent(event, kOccupancySensorEndpointId, eventNumber);
-    if (err != CHIP_NO_ERROR) {
-        LOG_ERR("Failed to log occupancy event: %" CHIP_ERROR_FORMAT, err.Format());
-    } else {
-        LOG_INF("OccupancyChanged event sent (EventNumber: %" PRIu64 ")", eventNumber);
-    }
-
-    return CHIP_NO_ERROR;
-}
-
-bool OccupancySensorPIR::IsOccupied()
-{
-    chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
-    Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(kOccupancySensorEndpointId, &currentOccupancy);
-    VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
-    return currentOccupancy.Has(Clusters::OccupancySensing::OccupancyBitmap::kOccupied);
-}
-
-void OccupancySensorPIR::OccupancyPresentTimerHandler(System::Layer * systemLayer, void * appState)
-{
-    EndpointId endpointId = static_cast<EndpointId>(reinterpret_cast<uintptr_t>(appState));
-    chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
-
-    Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(endpointId, &currentOccupancy);
-    VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
-
-    uint8_t clearValue = 0;
-    if (!currentOccupancy.Has(Clusters::OccupancySensing::OccupancyBitmap::kOccupied))
-    {
-        return;
-    }
-
-    status = OccupancySensing::Attributes::Occupancy::Set(endpointId, clearValue);
-    if (status != Protocols::InteractionModel::Status::Success)
-    {
-        LOG_ERR("Failed to set occupancy state.");
-    }
-    else
-    {
-        LOG_ERR("Set Occupancy attribute to clear");
-    }
-
-    // Send OccupancyChanged event
-    chip::app::Clusters::OccupancySensing::Events::OccupancyChanged::Type event;
-    event.occupancy = clearValue ? chip::app::Clusters::OccupancySensing::OccupancyBitmap::kOccupied : static_cast<chip::app::Clusters::OccupancySensing::OccupancyBitmap>(0);
-
-    EventNumber eventNumber;
-    CHIP_ERROR err = LogEvent(event, kOccupancySensorEndpointId, eventNumber);
-    if (err != CHIP_NO_ERROR) {
-        LOG_ERR("Failed to log occupancy event: %" CHIP_ERROR_FORMAT, err.Format());
-    } else {
-        LOG_INF("OccupancyChanged event sent (EventNumber: %" PRIu64 ")", eventNumber);
-    }
-    LOG_INF("PIR sensor state change: OCCUPIED -> UNOCCUPIED");
-}
 
 void OccupancySensorPIR::PirInterruptCallback(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
 {
     ARG_UNUSED(dev);
+    ARG_UNUSED(cb);
     ARG_UNUSED(pins);
     
-    // Get the sensor instance from the callback structure
-    OccupancySensorPIR *sensor = CONTAINER_OF(cb, OccupancySensorPIR, mGpioCallback);
+    // Get the sensor instance using singleton pattern
+    OccupancySensorPIR *sensor = &OccupancySensorPIR::Instance();
     
     // Schedule work to handle the PIR sensor activation in a different context
     // This is important to avoid doing too much work in the interrupt context
@@ -213,8 +110,11 @@ void OccupancySensorPIR::PirInterruptCallback(const struct device *dev, struct g
 
 void OccupancySensorPIR::PirWorkHandler(k_work *work)
 {
-    // Get the sensor instance from the work structure
-    OccupancySensorPIR *sensor = CONTAINER_OF(work, OccupancySensorPIR, mPirWork);
+    ARG_UNUSED(work);
+    
+    // Get the sensor instance using singleton pattern
+    OccupancySensorPIR *sensor = &OccupancySensorPIR::Instance();
+    
     // Read the current GPIO state to confirm the interrupt was valid
     int pinValue = gpio_pin_get(sensor->mGpioDevice, kPirPin);
     LOG_INF("GPIO pin value: %d", pinValue);

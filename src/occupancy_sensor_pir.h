@@ -6,17 +6,16 @@
 
 #pragma once
 
-#include <platform/CHIPDeviceLayer.h>
-#include <app/clusters/occupancy-sensor-server/occupancy-sensor-server.h>
+#include "occupancy_sensor_base.h"
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/kernel.h>
 
 /**
  * @brief PIR Occupancy Sensor implementation for Matter
  * 
  * This class implements a PIR (Passive Infrared) occupancy sensor for Matter
+ * inheriting common functionality from OccupancySensorBase
  */
-class OccupancySensorPIR {
+class OccupancySensorPIR : public OccupancySensorBase {
 public:
     /**
      * @brief Get the singleton instance
@@ -35,31 +34,14 @@ public:
      * 
      * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
      */
-    CHIP_ERROR Init();
-
-    /**
-     * @brief Set the occupancy state
-     * 
-     * Updates the occupancy attribute and sends OccupancyChanged events
-     * 
-     * @param occupied true if occupied, false if unoccupied
-     * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
-     */
-    CHIP_ERROR SetOccupancyState(bool occupied);
-
-    /**
-     * @brief Get the current occupancy state
-     * 
-     * @return true if occupied, false if unoccupied
-     */
-    bool IsOccupied();
+    CHIP_ERROR Init() override;
 
     /**
      * @brief Get the endpoint ID for the occupancy sensor
      * 
      * @return chip::EndpointId The endpoint ID
      */
-    chip::EndpointId GetEndpointId() const { return kOccupancySensorEndpointId; }
+    chip::EndpointId GetEndpointId() const override { return kOccupancySensorEndpointId; }
 
 private:
     OccupancySensorPIR() = default;
@@ -83,12 +65,6 @@ private:
      */
     static void PirWorkHandler(k_work *work);
 
-    /**
-     * @brief Timer callback for occupancy timeout
-     * 
-     * Called when the occupancy timeout expires to set state to unoccupied
-     */
-    static void OccupancyPresentTimerHandler(chip::System::Layer * systemLayer, void * appState);
 
     // Configuration constants
     static constexpr chip::EndpointId kOccupancySensorEndpointId = 1;
@@ -102,10 +78,4 @@ private:
     const struct device *mGpioDevice = nullptr;
     struct gpio_callback mGpioCallback;
     struct k_work mPirWork;
-    
-    // State tracking
-    bool mInitialized = false;
-    
-    // Matter cluster instance
-    chip::app::Clusters::OccupancySensing::Instance *mClusterInstance = nullptr;
 };
