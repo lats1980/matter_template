@@ -32,6 +32,10 @@ CHIP_ERROR OccupancySensorBase::SetOccupancyState(bool occupied)
     }
 
     chip::EndpointId endpointId = GetEndpointId();
+    if (endpointId == kInvalidEndpointId) {
+        LOG_ERR("Invalid endpoint ID");
+        return CHIP_ERROR_INVALID_ARGUMENT;
+    }
 
     if (occupied)
     {
@@ -147,3 +151,5 @@ CHIP_ERROR OccupancySensorBase::InitializeClusterInstance(chip::BitMask<chip::ap
 
     return CHIP_NO_ERROR;
 }
+
+

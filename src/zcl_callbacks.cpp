@@ -18,6 +18,7 @@
 #include <app/clusters/occupancy-sensor-server/occupancy-sensor-server.h>
 
 #include <app/util/attribute-storage.h>
+#include <app/util/endpoint-config-api.h>
 
 using namespace ::chip;
 using namespace ::chip::app;
@@ -34,9 +35,8 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
             		", EndPoint ID: '0x%02x', Attribute ID: " ChipLogFormatMEI,
             		ChipLogValueMEI(clusterId), endpointId, ChipLogValueMEI(attributeId));
 
-	if (OccupancySensorPIR::Instance().GetEndpointId() != endpointId &&
-	    OccupancySensorRFS::Instance().GetEndpointId() != endpointId) {
-		// Not our endpoint, ignore
+	if (endpointId > emberAfEndpointCount()) {
+		ChipLogProgress(Zcl, "Invalid endpointId: %u exceeds maximum endpoint count", endpointId);
 		return;
 	}
 
@@ -59,9 +59,8 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 
 void emberAfOccupancySensingClusterInitCallback(EndpointId endpointId)
 {
-	if (OccupancySensorPIR::Instance().GetEndpointId() != endpointId &&
-	    OccupancySensorRFS::Instance().GetEndpointId() != endpointId) {
-		// Not our endpoint, ignore
+	if (endpointId > emberAfEndpointCount()) {
+		ChipLogProgress(Zcl, "Invalid endpointId: %u exceeds maximum endpoint count", endpointId);
 		return;
 	}
 
@@ -71,8 +70,6 @@ void emberAfOccupancySensingClusterInitCallback(EndpointId endpointId)
 		.holdTimeMax     = CONFIG_HOLD_TIME_LIMIT_MAX_SEC,
 		.holdTimeDefault = holdTime,
 	};
-
 	SetHoldTimeLimits(endpointId, holdTimeLimits);
-
 	SetHoldTime(endpointId, holdTime);
 }

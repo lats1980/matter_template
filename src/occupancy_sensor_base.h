@@ -100,3 +100,5 @@ private:
     OccupancySensorBase(const OccupancySensorBase&) = delete;
     OccupancySensorBase& operator=(const OccupancySensorBase&) = delete;
 };
+
+

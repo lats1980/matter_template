@@ -30,8 +30,8 @@ public:
     /**
      * @brief Initialize the RF Sensing occupancy sensor
      * 
-     * Initializes the Matter OccupancySensing cluster on Endpoint 2 with
-     * RF sensing capabilities and starts the periodic IFFT monitoring.
+     * Initializes the Matter OccupancySensing cluster with RF sensing capabilities.
+     * Uses endpoint 2 for Device 1 (DC:B8:19:90:68:51) or endpoint 3 for Device 2 (DC:B8:19:90:68:52).
      * 
      * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
      */
@@ -40,9 +40,11 @@ public:
     /**
      * @brief Get the endpoint ID for the occupancy sensor
      * 
-     * @return chip::EndpointId The endpoint ID
+     * Returns endpoint 2 for device 1, endpoint 3 for device 2
+     * 
+     * @return chip::EndpointId The endpoint ID based on connected device
      */
-    chip::EndpointId GetEndpointId() const override { return kOccupancySensorEndpointId; }
+    chip::EndpointId GetEndpointId() const override;
 
     /**
      * @brief Start RF sensing monitoring
@@ -99,10 +101,48 @@ private:
      */
     bool CheckRFSensing();
 
+    /**
+     * @brief Detect which device is connected
+     * 
+     * Determines the connected device based on remote MAC address from channel sounding
+     * 
+     * @return Device number (1 or 2), 0 if unknown
+     */
+    uint8_t DetectConnectedDevice() const;
+
+    /**
+     * @brief Reset device detection cache
+     * 
+     * Forces re-detection of the connected device on next call to DetectConnectedDevice()
+     * Useful when device reconnects or changes
+     */
+    void ResetDeviceCache() { mConnectedDevice = 0; }
+
+    // Device identification constants - configured via Kconfig
+    static constexpr uint8_t kDeviceMac1[6] = {
+        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 40) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 32) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 24) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 16) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 8) & 0xFF),
+        (uint8_t)(CONFIG_RFS_DEVICE1_MAC_ADDR & 0xFF)
+    }; // Device 1 MAC from Kconfig
+
+    static constexpr uint8_t kDeviceMac2[6] = {
+        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 40) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 32) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 24) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 16) & 0xFF),
+        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 8) & 0xFF),
+        (uint8_t)(CONFIG_RFS_DEVICE2_MAC_ADDR & 0xFF)
+    }; // Device 2 MAC from Kconfig
+    
     // Configuration constants
-    static constexpr chip::EndpointId kOccupancySensorEndpointId = 2;
+    static constexpr chip::EndpointId kInvalidEndpointId = 0; // Invalid endpoint ID
+    static constexpr chip::EndpointId kDevice1EndpointId = 2;  // Endpoint for device 1
+    static constexpr chip::EndpointId kDevice2EndpointId = 3;  // Endpoint for device 2
     static constexpr float kIfftOccupancyThreshold = 3.0f; // IFFT < 3.0 indicates occupancy
-    static constexpr uint32_t kRfSensingIntervalMs = 3000; // Check IFFT every 1 second
+    static constexpr uint32_t kRfSensingIntervalMs = 3000; // Check IFFT every 3 seconds
     
     // Zephyr resources
     struct k_work mRfsWork;
@@ -111,4 +151,5 @@ private:
     
     // State tracking
     bool mRfSensingActive = false;
+    mutable uint8_t mConnectedDevice = 0; // Cache for connected device (1, 2, or 0 for unknown)
 };

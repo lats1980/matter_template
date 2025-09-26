@@ -55,7 +55,11 @@ CHIP_ERROR OccupancySensorRFS::Init()
         return CHIP_NO_ERROR;
     }
 
-    LOG_INF("Initializing RF Sensing occupancy sensor for Endpoint %d", kOccupancySensorEndpointId);
+    // Reset device cache to force fresh detection
+    ResetDeviceCache();
+    
+    chip::EndpointId endpointId = GetEndpointId();
+    LOG_INF("Initializing RF Sensing occupancy sensor for Endpoint %d", endpointId);
 
     // Initialize work queue and timers for deferred processing
     k_work_init(&mRfsWork, RfsWorkHandler);
@@ -70,7 +74,7 @@ CHIP_ERROR OccupancySensorRFS::Init()
     ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(MatterEventHandler, 0));
 
     mInitialized = true;
-    LOG_INF("RF Sensing occupancy sensor initialized successfully on Endpoint %d", kOccupancySensorEndpointId);
+    LOG_INF("RF Sensing occupancy sensor initialized successfully on Endpoint %d", endpointId);
 
     return CHIP_NO_ERROR;
 }
@@ -91,8 +95,8 @@ CHIP_ERROR OccupancySensorRFS::StartRFSensing()
     k_timer_start(&mRfsTimer, K_MSEC(kRfSensingIntervalMs), K_MSEC(kRfSensingIntervalMs));
     mRfSensingActive = true;
 
-    LOG_INF("RF Sensing monitoring started (interval: %d ms, threshold: %.1f)", 
-            kRfSensingIntervalMs, (double)kIfftOccupancyThreshold);
+    LOG_INF("RF Sensing monitoring started (interval: %d ms, threshold: %.1f) on Endpoint %d", 
+            kRfSensingIntervalMs, (double)kIfftOccupancyThreshold, GetEndpointId());
 
     return CHIP_NO_ERROR;
 }
@@ -137,15 +141,14 @@ void OccupancySensorRFS::RfsWorkHandler(k_work *work)
     // Get the sensor instance using singleton pattern
     OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
     
-    LOG_DBG("RF Sensing work handler triggered");
-    
     // Check RF sensing data and determine occupancy
     bool occupied = sensor->CheckRFSensing();
     
     // Update occupancy state if occupied
+    LOG_DBG("RFS occupied: %d", occupied);
     if (occupied) {
-        Nrf::PostTask([sensor, occupied] { 
-            CHIP_ERROR err = sensor->SetOccupancyState(occupied);
+        Nrf::PostTask([sensor] { 
+            CHIP_ERROR err = sensor->SetOccupancyState(true);
             if (err != CHIP_NO_ERROR) {
                 LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
             }
@@ -162,5 +165,51 @@ void OccupancySensorRFS::RfsTimerCallback(k_timer *timer)
     
     // Schedule work to check RF sensing data
     k_work_submit(&sensor->mRfsWork);
+}
+
+chip::EndpointId OccupancySensorRFS::GetEndpointId() const
+{
+    uint8_t device = DetectConnectedDevice();
+    
+    switch (device) {
+        case 1:
+            return kDevice1EndpointId; // Endpoint 2
+        case 2:
+            return kDevice2EndpointId; // Endpoint 3
+        default:
+            LOG_WRN("Unknown device, return invalid endpoint");
+            return kInvalidEndpointId;
+    }
+}
+
+uint8_t OccupancySensorRFS::DetectConnectedDevice() const
+{   
+    // Get the remote connected device's MAC address from channel sounding module
+    uint8_t remote_addr[6];
+    bool addr_valid = channel_sounding_get_remote_address(remote_addr);
+    
+    if (addr_valid) {
+        // Compare with known device MAC addresses
+        if (memcmp(remote_addr, kDeviceMac1, 6) == 0) {
+            LOG_INF("Detected Device 1 - using endpoint 2");
+            mConnectedDevice = 1;
+            return 1;
+        } else if (memcmp(remote_addr, kDeviceMac2, 6) == 0) {
+            LOG_INF("Detected Device 2 - using endpoint 3");
+            mConnectedDevice = 2;
+            return 2;
+        }
+        
+        // Log the actual remote MAC address for debugging
+        LOG_INF("Detected unknown remote device MAC: %02X:%02X:%02X:%02X:%02X:%02X", 
+                remote_addr[5], remote_addr[4], remote_addr[3],
+                remote_addr[2], remote_addr[1], remote_addr[0]);
+    } else {
+        LOG_WRN("Failed to get remote device MAC address from channel sounding");
+    }
+    // Unable to determine device
+    LOG_WRN("Device detection failed");
+    mConnectedDevice = 0;
+    return 0;
 }
 

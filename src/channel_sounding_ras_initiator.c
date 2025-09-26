@@ -28,6 +28,25 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(channel_sounding, LOG_LEVEL_INF);
 
+/* Known device MAC addresses from Kconfig */
+static const uint8_t known_device1_mac[6] = {
+    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 40) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 32) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 24) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 16) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 8) & 0xFF),
+    (uint8_t)(CONFIG_RFS_DEVICE1_MAC_ADDR & 0xFF)
+};
+
+static const uint8_t known_device2_mac[6] = {
+    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 40) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 32) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 24) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 16) & 0xFF),
+    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 8) & 0xFF),
+    (uint8_t)(CONFIG_RFS_DEVICE2_MAC_ADDR & 0xFF)
+};
+
 #define CON_STATUS_LED DK_LED1
 
 #define CS_CONFIG_ID           0
@@ -67,6 +86,10 @@ NET_BUF_SIMPLE_DEFINE_STATIC(latest_peer_steps, BT_RAS_PROCEDURE_MEM);
 static int32_t most_recent_local_ranging_counter = PROCEDURE_COUNTER_NONE;
 static int32_t dropped_ranging_counter = PROCEDURE_COUNTER_NONE;
 static uint32_t ras_feature_bits;
+
+/* Remote device address storage */
+static bool remote_address_valid = false;
+static uint8_t remote_device_addr[6];
 
 static uint8_t buffer_index;
 static uint8_t buffer_num_valid;
@@ -365,19 +388,44 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 	if (err) {
 		bt_conn_unref(conn);
 		connection = NULL;
+		remote_address_valid = false;
 		return;
 	}
 
 	err = bt_conn_get_info(conn, &info);
 	if (err) {
 		printk("Failed to get connection info (err %d)\n", err);
+		remote_address_valid = false;
 		return;
 	}
 	if (info.role == BT_CONN_ROLE_PERIPHERAL) {
+		remote_address_valid = false;
 		return;
 	}
 
 	connection = bt_conn_ref(conn);
+	
+	/* Store the remote device address for device identification */
+	const bt_addr_le_t *remote_addr = bt_conn_get_dst(conn);
+	if (remote_addr) {
+		memcpy(remote_device_addr, remote_addr->a.val, 6);
+		remote_address_valid = true;
+		LOG_INF("Stored remote device address: %02X:%02X:%02X:%02X:%02X:%02X",
+			remote_device_addr[5], remote_device_addr[4], remote_device_addr[3],
+			remote_device_addr[2], remote_device_addr[1], remote_device_addr[0]);
+		
+		/* Double-check: if somehow an unknown device connected, disconnect it immediately */
+		if (!channel_sounding_is_known_device(remote_device_addr)) {
+			LOG_ERR("Connected to unknown device - disconnecting immediately");
+			bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+			return;
+		}
+		
+		LOG_INF("Confirmed connection to known RF sensing device");
+	} else {
+		remote_address_valid = false;
+		LOG_ERR("Failed to get remote device address");
+	}
 
 	k_sem_give(&sem_connected);
 
@@ -386,6 +434,8 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 
 static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 {
+	int err;
+	
 	LOG_INF("Disconnected (reason 0x%02X)", reason);
 
 	if (conn != connection) {
@@ -396,10 +446,26 @@ static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 	connection = NULL;
 	dk_set_led_off(CON_STATUS_LED);
 
-	/* Reset CS enabled state on disconnect */
+	/* Reset CS enabled state and remote address on disconnect */
 	k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
 	cs_enabled = false;
 	k_mutex_unlock(&cs_procedure_mutex);
+	
+	remote_address_valid = false;
+	memset(remote_device_addr, 0, sizeof(remote_device_addr));
+	
+	/* Brief delay to ensure cleanup is complete before restarting scan */
+	k_sleep(K_MSEC(100));
+	
+	/* Restart scanning to look for known RF sensing devices */
+	LOG_INF("Restarting scan to reconnect to RF sensing devices");
+	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
+	if (err) {
+		LOG_ERR("Failed to restart scanning after disconnect (err %d)", err);
+		/* Main thread will retry scanning in its loop */
+	} else {
+		LOG_INF("Scanning restarted successfully");
+	}
 }
 
 static void remote_capabilities_cb(struct bt_conn *conn,
@@ -499,6 +565,15 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 	bt_addr_le_to_str(device_info->recv_info->addr, addr, sizeof(addr));
 
 	LOG_INF("Filters matched. Address: %s connectable: %d", addr, connectable);
+	
+	// Check if this is a known RF sensing device before allowing connection
+	if (!channel_sounding_is_known_device(device_info->recv_info->addr->a.val)) {
+		LOG_WRN("Ignoring connection to unknown device: %s", addr);
+		// Continue scanning instead of connecting to unknown device
+		return;
+	}
+	
+	LOG_INF("Known RF sensing device detected: %s - allowing connection", addr);
 }
 
 static void scan_connecting_error(struct bt_scan_device_info *device_info)
@@ -573,18 +648,20 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		LOG_ERR("Scan init failed (err %d)", err);
 		return;
 	}
-rescan:
+
 	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
 	if (err) {
 		LOG_ERR("Scanning failed to start (err %i)", err);
 		return;
 	}
+restart:
 	k_sem_take(&sem_connected, K_FOREVER);
 
 	err = bt_conn_set_security(connection, BT_SECURITY_L2);
 	if (err) {
 		LOG_ERR("Failed to encrypt connection (err %d)", err);
-		return;
+		bt_conn_disconnect(connection, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		goto restart;
 	}
 
 	k_sem_take(&sem_security, K_FOREVER);
@@ -741,29 +818,10 @@ rescan:
 	/* Main processing loop */
 	while (true) {
 		k_sleep(K_MSEC(3000));
-
-		/* Only process distance estimates if Channel Sounding is enabled */
-		k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
-		bool enabled = cs_enabled;
-		k_mutex_unlock(&cs_procedure_mutex);
-
 		/* If connection is lost, restart scanning */
 		if (connection == NULL) {
-			goto rescan;
+			goto restart;
 		}
-
-		if (enabled && buffer_num_valid != 0) {
-			for (uint8_t ap = 0; ap < MAX_AP; ap++) {
-				cs_de_dist_estimates_t distance_on_ap = get_distance(ap);
-
-				LOG_INF("Distance estimates on antenna path %u: ifft: %f, "
-					"phase_slope: %f, rtt: %f",
-					ap, (double)distance_on_ap.ifft,
-					(double)distance_on_ap.phase_slope,
-					(double)distance_on_ap.rtt);
-			}
-		}
-
 		LOG_DBG("Channel Sounding thread processing...");
 	}
 }
@@ -879,6 +937,49 @@ bool channel_sounding_get_ifft_distance(float *ifft_distance)
 	*ifft_distance = distance_on_ap0.ifft;
 	LOG_DBG("Retrieved IFFT distance: %.2f", (double)*ifft_distance);
 
+	return true;
+}
+
+bool channel_sounding_is_known_device(const uint8_t *addr)
+{
+	if (!addr) {
+		return false;
+	}
+
+	// Check if it matches Device 1
+	if (memcmp(addr, known_device1_mac, 6) == 0) {
+		LOG_DBG("Device matches known Device 1");
+		return true;
+	}
+
+	// Check if it matches Device 2
+	if (memcmp(addr, known_device2_mac, 6) == 0) {
+		LOG_DBG("Device matches known Device 2");
+		return true;
+	}
+
+	LOG_DBG("Unknown device: %02X:%02X:%02X:%02X:%02X:%02X",
+		addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+	return false;
+}
+
+bool channel_sounding_get_remote_address(uint8_t *remote_addr)
+{
+	if (!remote_addr) {
+		LOG_ERR("Invalid remote_addr pointer");
+		return false;
+	}
+
+	if (!remote_address_valid) {
+		LOG_DBG("No valid remote device address available");
+		return false;
+	}
+
+	memcpy(remote_addr, remote_device_addr, 6);
+	LOG_DBG("Retrieved remote device address: %02X:%02X:%02X:%02X:%02X:%02X",
+		remote_addr[5], remote_addr[4], remote_addr[3],
+		remote_addr[2], remote_addr[1], remote_addr[0]);
+	
 	return true;
 }
 
