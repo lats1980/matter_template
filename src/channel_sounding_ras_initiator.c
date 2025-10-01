@@ -23,10 +23,9 @@
 #include <bluetooth/gatt_dm.h>
 #include <bluetooth/cs_de.h>
 
-#include <dk_buttons_and_leds.h>
-
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(channel_sounding, LOG_LEVEL_INF);
+
+LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
 /* Known device MAC addresses from Kconfig */
 static const uint8_t known_device1_mac[6] = {
@@ -47,8 +46,6 @@ static const uint8_t known_device2_mac[6] = {
     (uint8_t)(CONFIG_RFS_DEVICE2_MAC_ADDR & 0xFF)
 };
 
-#define CON_STATUS_LED DK_LED1
-
 #define CS_CONFIG_ID           0
 #define NUM_MODE_0_STEPS       3
 #define PROCEDURE_COUNTER_NONE (-1)
@@ -67,14 +64,7 @@ static K_THREAD_STACK_DEFINE(channel_sounding_thread_stack, CHANNEL_SOUNDING_THR
 static struct k_thread channel_sounding_thread_data;
 static k_tid_t channel_sounding_thread_id;
 
-static K_SEM_DEFINE(sem_remote_capabilities_obtained, 0, 1);
-static K_SEM_DEFINE(sem_config_created, 0, 1);
-static K_SEM_DEFINE(sem_cs_security_enabled, 0, 1);
-static K_SEM_DEFINE(sem_connected, 0, 1);
-static K_SEM_DEFINE(sem_discovery_done, 0, 1);
-static K_SEM_DEFINE(sem_mtu_exchange_done, 0, 1);
-static K_SEM_DEFINE(sem_security, 0, 1);
-static K_SEM_DEFINE(sem_ras_features, 0, 1);
+static K_SEM_DEFINE(sem_cs_control, 0, 1);
 static K_SEM_DEFINE(sem_local_steps, 1, 1);
 
 static K_MUTEX_DEFINE(distance_estimate_buffer_mutex);
@@ -96,8 +86,9 @@ static uint8_t buffer_num_valid;
 static cs_de_dist_estimates_t distance_estimate_buffer[MAX_AP][DE_SLIDING_WINDOW_SIZE];
 
 /* Channel Sounding control variables */
-static bool cs_initialized = false;
-static bool cs_enabled = false;
+static int cs_op_result;
+
+static enum channel_sounding_state cs_state = CS_STATE_UNINITIALIZED;
 
 static void store_distance_estimates(cs_de_report_t *p_report)
 {
@@ -307,11 +298,11 @@ static void mtu_exchange_cb(struct bt_conn *conn, uint8_t err,
 {
 	if (err) {
 		LOG_ERR("MTU exchange failed (err %d)", err);
-		return;
+		cs_op_result = err;
+	} else {
+		LOG_INF("MTU exchange success (%u)", bt_gatt_get_mtu(conn));
 	}
-
-	LOG_INF("MTU exchange success (%u)", bt_gatt_get_mtu(conn));
-	k_sem_give(&sem_mtu_exchange_done);
+	k_sem_give(&sem_cs_control);
 }
 
 static void discovery_completed_cb(struct bt_gatt_dm *dm, void *context)
@@ -327,26 +318,31 @@ static void discovery_completed_cb(struct bt_gatt_dm *dm, void *context)
 	err = bt_ras_rreq_alloc_and_assign_handles(dm, conn);
 	if (err) {
 		LOG_ERR("RAS RREQ alloc init failed (err %d)", err);
+		cs_op_result = err;
+		k_sem_give(&sem_cs_control);
+		return;
 	}
 
 	err = bt_gatt_dm_data_release(dm);
 	if (err) {
 		LOG_ERR("Could not release the discovery data (err %d)", err);
+		cs_op_result = err;
 	}
-
-	k_sem_give(&sem_discovery_done);
+	k_sem_give(&sem_cs_control);
 }
 
 static void discovery_service_not_found_cb(struct bt_conn *conn, void *context)
 {
 	LOG_INF("The service could not be found during the discovery, disconnecting");
-	bt_conn_disconnect(connection, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	cs_op_result = -EINVAL;
+	k_sem_give(&sem_cs_control);
 }
 
 static void discovery_error_found_cb(struct bt_conn *conn, int err, void *context)
 {
 	LOG_INF("The discovery procedure failed (err %d)", err);
-	bt_conn_disconnect(connection, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	cs_op_result = err;
+	k_sem_give(&sem_cs_control);
 }
 
 static struct bt_gatt_dm_cb discovery_cb = {
@@ -364,11 +360,11 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 	if (err) {
 		LOG_ERR("Security failed: %s level %u err %d %s", addr, level, err,
 			bt_security_err_to_str(err));
-		return;
+		cs_op_result = err;
+	} else {
+		LOG_INF("Security changed: %s level %u", addr, level);
 	}
-
-	LOG_INF("Security changed: %s level %u", addr, level);
-	k_sem_give(&sem_security);
+	k_sem_give(&sem_cs_control);
 }
 
 static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
@@ -427,15 +423,11 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 		LOG_ERR("Failed to get remote device address");
 	}
 
-	k_sem_give(&sem_connected);
-
-	dk_set_led_on(CON_STATUS_LED);
+	k_sem_give(&sem_cs_control);
 }
 
 static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 {
-	int err;
-	
 	LOG_INF("Disconnected (reason 0x%02X)", reason);
 
 	if (conn != connection) {
@@ -444,28 +436,9 @@ static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 
 	bt_conn_unref(conn);
 	connection = NULL;
-	dk_set_led_off(CON_STATUS_LED);
-
-	/* Reset CS enabled state and remote address on disconnect */
-	k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
-	cs_enabled = false;
-	k_mutex_unlock(&cs_procedure_mutex);
 	
 	remote_address_valid = false;
 	memset(remote_device_addr, 0, sizeof(remote_device_addr));
-	
-	/* Brief delay to ensure cleanup is complete before restarting scan */
-	k_sleep(K_MSEC(100));
-	
-	/* Restart scanning to look for known RF sensing devices */
-	LOG_INF("Restarting scan to reconnect to RF sensing devices");
-	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
-	if (err) {
-		LOG_ERR("Failed to restart scanning after disconnect (err %d)", err);
-		/* Main thread will retry scanning in its loop */
-	} else {
-		LOG_INF("Scanning restarted successfully");
-	}
 }
 
 static void remote_capabilities_cb(struct bt_conn *conn,
@@ -477,10 +450,11 @@ static void remote_capabilities_cb(struct bt_conn *conn,
 
 	if (status == BT_HCI_ERR_SUCCESS) {
 		LOG_INF("CS capability exchange completed.");
-		k_sem_give(&sem_remote_capabilities_obtained);
 	} else {
 		LOG_WRN("CS capability exchange failed. (HCI status 0x%02x)", status);
+		cs_op_result = status;
 	}
+	k_sem_give(&sem_cs_control);
 }
 
 static void config_create_cb(struct bt_conn *conn,
@@ -491,10 +465,11 @@ static void config_create_cb(struct bt_conn *conn,
 
 	if (status == BT_HCI_ERR_SUCCESS) {
 		LOG_INF("CS config creation complete. ID: %d", config->id);
-		k_sem_give(&sem_config_created);
 	} else {
 		LOG_WRN("CS config creation failed. (HCI status 0x%02x)", status);
+		cs_op_result = status;
 	}
+	k_sem_give(&sem_cs_control);
 }
 
 static void security_enable_cb(struct bt_conn *conn, uint8_t status)
@@ -503,10 +478,11 @@ static void security_enable_cb(struct bt_conn *conn, uint8_t status)
 
 	if (status == BT_HCI_ERR_SUCCESS) {
 		LOG_INF("CS security enabled.");
-		k_sem_give(&sem_cs_security_enabled);
 	} else {
 		LOG_WRN("CS security enable failed. (HCI status 0x%02x)", status);
+		cs_op_result = status;
 	}
+	k_sem_give(&sem_cs_control);
 }
 
 static void procedure_enable_cb(struct bt_conn *conn,
@@ -516,10 +492,6 @@ static void procedure_enable_cb(struct bt_conn *conn,
 	ARG_UNUSED(conn);
 
 	if (status == BT_HCI_ERR_SUCCESS) {
-		k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
-		cs_enabled = (params->state == 1);
-		k_mutex_unlock(&cs_procedure_mutex);
-
 		if (params->state == 1) {
 			LOG_INF("CS procedures enabled:\n"
 				" - config ID: %u\n"
@@ -542,7 +514,9 @@ static void procedure_enable_cb(struct bt_conn *conn,
 		}
 	} else {
 		LOG_WRN("CS procedures enable failed. (HCI status 0x%02x)", status);
+		cs_op_result = status;
 	}
+	k_sem_give(&sem_cs_control);
 }
 
 void ras_features_read_cb(struct bt_conn *conn, uint32_t feature_bits, int err)
@@ -553,8 +527,8 @@ void ras_features_read_cb(struct bt_conn *conn, uint32_t feature_bits, int err)
 		LOG_INF("Read RAS feature bits: 0x%x", feature_bits);
 		ras_feature_bits = feature_bits;
 	}
-
-	k_sem_give(&sem_ras_features);
+	cs_op_result = err;
+	k_sem_give(&sem_cs_control);
 }
 
 static void scan_filter_match(struct bt_scan_device_info *device_info,
@@ -574,6 +548,7 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 	}
 	
 	LOG_INF("Known RF sensing device detected: %s - allowing connection", addr);
+	bt_scan_stop();
 }
 
 static void scan_connecting_error(struct bt_scan_device_info *device_info)
@@ -641,7 +616,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 
 	int err;
 
-	LOG_INF("Starting Channel Sounding thread");
+	LOG_INF("Init Channel Sounding thread");
 
 	err = scan_init();
 	if (err) {
@@ -649,186 +624,222 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		return;
 	}
 
-	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
-	if (err) {
-		LOG_ERR("Scanning failed to start (err %i)", err);
-		return;
-	}
-restart:
-	k_sem_take(&sem_connected, K_FOREVER);
-
-	err = bt_conn_set_security(connection, BT_SECURITY_L2);
-	if (err) {
-		LOG_ERR("Failed to encrypt connection (err %d)", err);
-		bt_conn_disconnect(connection, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-		goto restart;
-	}
-
-	k_sem_take(&sem_security, K_FOREVER);
-
-	static struct bt_gatt_exchange_params mtu_exchange_params = {.func = mtu_exchange_cb};
-
-	bt_gatt_exchange_mtu(connection, &mtu_exchange_params);
-
-	k_sem_take(&sem_mtu_exchange_done, K_FOREVER);
-
-	err = bt_gatt_dm_start(connection, BT_UUID_RANGING_SERVICE, &discovery_cb, NULL);
-	if (err) {
-		LOG_ERR("Discovery failed (err %d)", err);
-		return;
-	}
-
-	k_sem_take(&sem_discovery_done, K_FOREVER);
-
-	const struct bt_le_cs_set_default_settings_param default_settings = {
-		.enable_initiator_role = true,
-		.enable_reflector_role = false,
-		.cs_sync_antenna_selection = BT_LE_CS_ANTENNA_SELECTION_OPT_REPETITIVE,
-		.max_tx_power = BT_HCI_OP_LE_CS_MAX_MAX_TX_POWER,
-	};
-
-	err = bt_le_cs_set_default_settings(connection, &default_settings);
-	if (err) {
-		LOG_ERR("Failed to configure default CS settings (err %d)", err);
-		return;
-	}
-
-	err = bt_ras_rreq_read_features(connection, ras_features_read_cb);
-	if (err) {
-		LOG_ERR("Could not get RAS features from peer (err %d)", err);
-		return;
-	}
-
-	k_sem_take(&sem_ras_features, K_FOREVER);
-
-	const bool realtime_rd = ras_feature_bits & RAS_FEAT_REALTIME_RD;
-
-	if (realtime_rd) {
-		err = bt_ras_rreq_realtime_rd_subscribe(connection,
-							&latest_peer_steps,
-							ranging_data_cb);
+	while (1) {
+		buffer_index = 0;
+		buffer_num_valid = 0;
+		memset(distance_estimate_buffer, 0, sizeof(distance_estimate_buffer));
+		cs_op_result = 0;
+		if (connection) {
+			LOG_INF("Disconnecting existing connection");
+			bt_conn_disconnect(connection, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		}
+		bt_scan_stop();
+		set_channel_sounding_state(CS_STATE_STOPPED);
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
 		if (err) {
-			LOG_ERR("RAS RREQ Real-time ranging data subscribe failed (err %d)", err);
+			LOG_ERR("Scanning failed to start (err %i)", err);
+			continue;
+		}
+		set_channel_sounding_state(CS_STATE_CONNECTING);
+		// wait for connection
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		if (!connection) {
+			LOG_ERR("No connected device");
+			continue;
+		}
+		err = bt_conn_set_security(connection, BT_SECURITY_L2);
+		if (err) {
+			LOG_ERR("Failed to encrypt connection (err %d)", err);
+			continue;
+		}
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		// wait and check security result
+		if (cs_op_result) {
+			LOG_ERR("Failed to secure connection: err %d", cs_op_result);
+			continue;
+		}
+
+		static struct bt_gatt_exchange_params mtu_exchange_params = {.func = mtu_exchange_cb};
+		err = bt_gatt_exchange_mtu(connection, &mtu_exchange_params);
+		if (err) {
+			LOG_ERR("MTU exchange failed (err %d)", err);
+			continue;
+		}
+		// wait and check mtu exchange result
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		if (cs_op_result) {
+			LOG_ERR("Failed to exchange MTU: err %d", cs_op_result);
+			continue;
+		}
+
+		err = bt_gatt_dm_start(connection, BT_UUID_RANGING_SERVICE, &discovery_cb, NULL);
+		if (err) {
+			LOG_ERR("Discovery failed (err %d)", err);
+			continue;
+		}
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		// wait and check discovery result
+		if (cs_op_result) {
+			LOG_ERR("Failed to discover RAS service: err %d", cs_op_result);
+			continue;
+		}
+
+		const struct bt_le_cs_set_default_settings_param default_settings = {
+			.enable_initiator_role = true,
+			.enable_reflector_role = false,
+			.cs_sync_antenna_selection = BT_LE_CS_ANTENNA_SELECTION_OPT_REPETITIVE,
+			.max_tx_power = BT_HCI_OP_LE_CS_MAX_MAX_TX_POWER,
+		};
+		err = bt_le_cs_set_default_settings(connection, &default_settings);
+		if (err) {
+			LOG_ERR("Failed to configure default CS settings (err %d)", err);
+			continue;
+		}
+		err = bt_ras_rreq_read_features(connection, ras_features_read_cb);
+		if (err) {
+			LOG_ERR("Could not get RAS features from peer (err %d)", err);
+			continue;
+		}
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		// wait and check RAS features read result
+		if (cs_op_result) {
+			LOG_ERR("Failed to read RAS features: err %d", cs_op_result);
+			continue;
+		}
+
+		const bool realtime_rd = ras_feature_bits & RAS_FEAT_REALTIME_RD;
+		if (realtime_rd) {
+			err = bt_ras_rreq_realtime_rd_subscribe(connection,
+								&latest_peer_steps,
+								ranging_data_cb);
+			if (err) {
+				LOG_ERR("RAS RREQ Real-time ranging data subscribe failed (err %d)", err);
+				continue;
+			}
+		} else {
+			err = bt_ras_rreq_rd_overwritten_subscribe(connection, ranging_data_overwritten_cb);
+			if (err) {
+				LOG_ERR("RAS RREQ ranging data overwritten subscribe failed (err %d)", err);
+				continue;
+			}
+			err = bt_ras_rreq_rd_ready_subscribe(connection, ranging_data_ready_cb);
+			if (err) {
+				LOG_ERR("RAS RREQ ranging data ready subscribe failed (err %d)", err);
+				continue;
+			}
+			err = bt_ras_rreq_on_demand_rd_subscribe(connection);
+			if (err) {
+				LOG_ERR("RAS RREQ On-demand ranging data subscribe failed (err %d)", err);
+				continue;
+			}
+			err = bt_ras_rreq_cp_subscribe(connection);
+			if (err) {
+				LOG_ERR("RAS RREQ CP subscribe failed (err %d)", err);
+				continue;
+			}
+		}
+
+		err = bt_le_cs_read_remote_supported_capabilities(connection);
+		if (err) {
+			LOG_ERR("Failed to exchange CS capabilities (err %d)", err);
+			continue;
+		}
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		// wait and check capabilities exchange result
+		if (cs_op_result) {
+			LOG_ERR("Failed to exchange CS capabilities: err %d", cs_op_result);
+			continue;
+		}
+
+		struct bt_le_cs_create_config_params config_params = {
+			.id = CS_CONFIG_ID,
+			.main_mode_type = BT_CONN_LE_CS_MAIN_MODE_2,
+			.sub_mode_type = BT_CONN_LE_CS_SUB_MODE_1,
+			.min_main_mode_steps = 2,
+			.max_main_mode_steps = 5,
+			.main_mode_repetition = 0,
+			.mode_0_steps = NUM_MODE_0_STEPS,
+			.role = BT_CONN_LE_CS_ROLE_INITIATOR,
+			.rtt_type = BT_CONN_LE_CS_RTT_TYPE_AA_ONLY,
+			.cs_sync_phy = BT_CONN_LE_CS_SYNC_1M_PHY,
+			.channel_map_repetition = 3,
+			.channel_selection_type = BT_CONN_LE_CS_CHSEL_TYPE_3B,
+			.ch3c_shape = BT_CONN_LE_CS_CH3C_SHAPE_HAT,
+			.ch3c_jump = 2,
+		};
+		bt_le_cs_set_valid_chmap_bits(config_params.channel_map);
+		err = bt_le_cs_create_config(connection, &config_params,
+						 BT_LE_CS_CREATE_CONFIG_CONTEXT_LOCAL_AND_REMOTE);
+		if (err) {
+			LOG_ERR("Failed to create CS config (err %d)", err);
+			continue;
+		}
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		// wait and check config creation result
+		if (cs_op_result) {
+			LOG_ERR("Failed to create CS config: err %d", cs_op_result);
+			continue;
+		}
+
+		err = bt_le_cs_security_enable(connection);
+		if (err) {
+			LOG_ERR("Failed to start CS Security (err %d)", err);
 			return;
 		}
-	} else {
-		err = bt_ras_rreq_rd_overwritten_subscribe(connection, ranging_data_overwritten_cb);
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		// wait and check security enable result
+		if (cs_op_result) {
+			LOG_ERR("Failed to enable CS security: err %d", cs_op_result);
+			continue;
+		}
+
+		const struct bt_le_cs_set_procedure_parameters_param procedure_params = {
+			.config_id = CS_CONFIG_ID,
+			.max_procedure_len = 1000,
+			.min_procedure_interval = realtime_rd ? 5 : 10,
+			.max_procedure_interval = realtime_rd ? 5 : 10,
+			.max_procedure_count = 2,
+			.min_subevent_len = 60000,
+			.max_subevent_len = 60000,
+			.tone_antenna_config_selection = BT_LE_CS_TONE_ANTENNA_CONFIGURATION_A1_B1,
+			.phy = BT_LE_CS_PROCEDURE_PHY_1M,
+			.tx_power_delta = 0x80,
+			.preferred_peer_antenna = BT_LE_CS_PROCEDURE_PREFERRED_PEER_ANTENNA_1,
+			.snr_control_initiator = BT_LE_CS_SNR_CONTROL_NOT_USED,
+			.snr_control_reflector = BT_LE_CS_SNR_CONTROL_NOT_USED,
+		};
+	
+		err = bt_le_cs_set_procedure_parameters(connection, &procedure_params);
 		if (err) {
-			LOG_ERR("RAS RREQ ranging data overwritten subscribe failed (err %d)", err);
-			return;
+			LOG_ERR("Failed to set procedure parameters (err %d)", err);
+			continue;
 		}
 
-		err = bt_ras_rreq_rd_ready_subscribe(connection, ranging_data_ready_cb);
+		struct bt_le_cs_procedure_enable_param params = {
+			.config_id = CS_CONFIG_ID,
+			.enable = 1,
+		};
+	
+		err = bt_le_cs_procedure_enable(connection, &params);
 		if (err) {
-			LOG_ERR("RAS RREQ ranging data ready subscribe failed (err %d)", err);
-			return;
+			LOG_ERR("Failed to enable CS procedures (err %d)", err);
+			continue;
 		}
-
-		err = bt_ras_rreq_on_demand_rd_subscribe(connection);
-		if (err) {
-			LOG_ERR("RAS RREQ On-demand ranging data subscribe failed (err %d)", err);
-			return;
+		k_sem_take(&sem_cs_control, K_FOREVER);
+		// wait and check procedure enable result
+		if (cs_op_result) {
+			LOG_ERR("Failed to enable CS procedures: err %d", cs_op_result);
+			continue;
 		}
-
-		err = bt_ras_rreq_cp_subscribe(connection);
-		if (err) {
-			LOG_ERR("RAS RREQ CP subscribe failed (err %d)", err);
-			return;
-		}
-	}
-
-	err = bt_le_cs_read_remote_supported_capabilities(connection);
-	if (err) {
-		LOG_ERR("Failed to exchange CS capabilities (err %d)", err);
-		return;
-	}
-
-	k_sem_take(&sem_remote_capabilities_obtained, K_FOREVER);
-
-	struct bt_le_cs_create_config_params config_params = {
-		.id = CS_CONFIG_ID,
-		.main_mode_type = BT_CONN_LE_CS_MAIN_MODE_2,
-		.sub_mode_type = BT_CONN_LE_CS_SUB_MODE_1,
-		.min_main_mode_steps = 2,
-		.max_main_mode_steps = 5,
-		.main_mode_repetition = 0,
-		.mode_0_steps = NUM_MODE_0_STEPS,
-		.role = BT_CONN_LE_CS_ROLE_INITIATOR,
-		.rtt_type = BT_CONN_LE_CS_RTT_TYPE_AA_ONLY,
-		.cs_sync_phy = BT_CONN_LE_CS_SYNC_1M_PHY,
-		.channel_map_repetition = 3,
-		.channel_selection_type = BT_CONN_LE_CS_CHSEL_TYPE_3B,
-		.ch3c_shape = BT_CONN_LE_CS_CH3C_SHAPE_HAT,
-		.ch3c_jump = 2,
-	};
-
-	bt_le_cs_set_valid_chmap_bits(config_params.channel_map);
-
-	err = bt_le_cs_create_config(connection, &config_params,
-				     BT_LE_CS_CREATE_CONFIG_CONTEXT_LOCAL_AND_REMOTE);
-	if (err) {
-		LOG_ERR("Failed to create CS config (err %d)", err);
-		return;
-	}
-
-	k_sem_take(&sem_config_created, K_FOREVER);
-
-	err = bt_le_cs_security_enable(connection);
-	if (err) {
-		LOG_ERR("Failed to start CS Security (err %d)", err);
-		return;
-	}
-
-	k_sem_take(&sem_cs_security_enabled, K_FOREVER);
-
-	const struct bt_le_cs_set_procedure_parameters_param procedure_params = {
-		.config_id = CS_CONFIG_ID,
-		.max_procedure_len = 1000,
-		.min_procedure_interval = realtime_rd ? 5 : 10,
-		.max_procedure_interval = realtime_rd ? 5 : 10,
-		.max_procedure_count = 0,
-		.min_subevent_len = 60000,
-		.max_subevent_len = 60000,
-		.tone_antenna_config_selection = BT_LE_CS_TONE_ANTENNA_CONFIGURATION_A1_B1,
-		.phy = BT_LE_CS_PROCEDURE_PHY_1M,
-		.tx_power_delta = 0x80,
-		.preferred_peer_antenna = BT_LE_CS_PROCEDURE_PREFERRED_PEER_ANTENNA_1,
-		.snr_control_initiator = BT_LE_CS_SNR_CONTROL_NOT_USED,
-		.snr_control_reflector = BT_LE_CS_SNR_CONTROL_NOT_USED,
-	};
-
-	err = bt_le_cs_set_procedure_parameters(connection, &procedure_params);
-	if (err) {
-		LOG_ERR("Failed to set procedure parameters (err %d)", err);
-		return;
-	}
-
-	struct bt_le_cs_procedure_enable_param params = {
-		.config_id = CS_CONFIG_ID,
-		.enable = 1,
-	};
-
-	err = bt_le_cs_procedure_enable(connection, &params);
-	if (err) {
-		LOG_ERR("Failed to enable CS procedures (err %d)", err);
-		return;
-	}
-	LOG_INF("Channel Sounding initialization complete");
-
-	/* Main processing loop */
-	while (true) {
-		k_sleep(K_MSEC(3000));
-		/* If connection is lost, restart scanning */
-		if (connection == NULL) {
-			goto restart;
-		}
-		LOG_DBG("Channel Sounding thread processing...");
+		set_channel_sounding_state(CS_STATE_STARTED);
+		k_sem_take(&sem_cs_control, K_FOREVER);
 	}
 }
 
 int channel_sounding_init(void)
 {
-	if (cs_initialized) {
+	if (get_channel_sounding_state() != CS_STATE_UNINITIALIZED) {
 		LOG_INF("Channel Sounding already initialized");
 		return 0;
 	}
@@ -850,63 +861,79 @@ int channel_sounding_init(void)
 	}
 
 	k_thread_name_set(channel_sounding_thread_id, "channel_sounding");
-
-	cs_initialized = true;
 	LOG_INF("Channel Sounding thread created successfully");
 
 	return 0;
 }
 
+enum channel_sounding_state get_channel_sounding_state(void)
+{
+	enum channel_sounding_state state;
+
+	k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
+	state = cs_state;
+	k_mutex_unlock(&cs_procedure_mutex);
+
+	return state;
+}
+
+bool set_channel_sounding_state(enum channel_sounding_state state)
+{
+	bool success = false;
+
+	k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
+	if (state == CS_STATE_STOPPED) {
+		if (cs_state != CS_STATE_STOPPED) {
+			cs_state = CS_STATE_STOPPED;
+			success = true;
+		}
+	} else if (state == CS_STATE_CONNECTING) {
+		if (cs_state == CS_STATE_STOPPED) {
+			cs_state = CS_STATE_CONNECTING;
+			success = true;
+		}
+	} else if (state == CS_STATE_STARTED)  {
+		if (cs_state == CS_STATE_CONNECTING) {
+			cs_state = CS_STATE_STARTED;
+			success = true;
+		}
+	} else {
+		LOG_ERR("Invalid Channel Sounding state requested");
+	}
+	if (!success) {
+		LOG_DBG("Channel Sounding state change to %d not allowed from state %d",
+			state, cs_state);
+	} else {
+		LOG_DBG("Channel Sounding state changed to %d", state);
+	}
+	k_mutex_unlock(&cs_procedure_mutex);
+
+	return success;
+}
+
 int channel_sounding_procedure_enable(bool enable)
 {
-	int err;
-
-	if (!cs_initialized) {
+	if (get_channel_sounding_state() == CS_STATE_UNINITIALIZED) {
 		LOG_ERR("Channel Sounding not initialized");
 		return -ENOTCONN;
 	}
 
-	if (!connection) {
-		LOG_ERR("No active Bluetooth connection");
-		return -ENOTCONN;
+	if (enable) {
+		if (get_channel_sounding_state() != CS_STATE_STOPPED) {
+			LOG_WRN("Channel Sounding already started or starting");
+		} else {
+			k_sem_give(&sem_cs_control);	
+		}
+	} else {
+		if (get_channel_sounding_state() == CS_STATE_STOPPED) {
+			LOG_WRN("Channel Sounding already stopped");
+		} else {
+			k_sem_give(&sem_cs_control);
+		}
 	}
-
-	k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
-
-	if (cs_enabled == enable) {
-		LOG_INF("Channel Sounding already %s", enable ? "enabled" : "disabled");
-		k_mutex_unlock(&cs_procedure_mutex);
-		return 0;
-	}
-
-	struct bt_le_cs_procedure_enable_param params = {
-		.config_id = CS_CONFIG_ID,
-		.enable = enable ? 1 : 0,
-	};
-
-	err = bt_le_cs_procedure_enable(connection, &params);
-	if (err) {
-		LOG_ERR("Failed to %s CS procedures (err %d)", 
-			enable ? "enable" : "disable", err);
-		k_mutex_unlock(&cs_procedure_mutex);
-		return err;
-	}
-
 	LOG_INF("Channel Sounding procedures %s", enable ? "enabled" : "disabled");
-	k_mutex_unlock(&cs_procedure_mutex);
 
 	return 0;
-}
-
-bool channel_sounding_is_enabled(void)
-{
-	bool enabled;
-
-	k_mutex_lock(&cs_procedure_mutex, K_FOREVER);
-	enabled = cs_enabled;
-	k_mutex_unlock(&cs_procedure_mutex);
-
-	return enabled;
 }
 
 bool channel_sounding_get_ifft_distance(float *ifft_distance)
@@ -915,8 +942,8 @@ bool channel_sounding_get_ifft_distance(float *ifft_distance)
 		return false;
 	}
 
-	if (!cs_initialized || !cs_enabled) {
-		LOG_DBG("Channel Sounding not initialized or not enabled");
+	if (get_channel_sounding_state() != CS_STATE_STARTED) {
+		LOG_DBG("Channel Sounding not started");
 		return false;
 	}
 

@@ -23,12 +23,24 @@ using namespace ::chip;
 using namespace ::chip::app;
 using namespace ::chip::DeviceLayer;
 
+#define MODE_BUTTON_MASK DK_BTN2_MSK
+
+void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
+{
+	if (MODE_BUTTON_MASK & hasChanged) {
+		bool button_pressed = (MODE_BUTTON_MASK & state) != 0;
+		Nrf::PostTask([button_pressed] { 
+			OccupancySensorRFS::Instance().HandleButtonEvent(button_pressed);
+		});
+	}
+}
+
 CHIP_ERROR AppTask::Init()
 {
 	/* Initialize Matter stack */
 	ReturnErrorOnFailure(Nrf::Matter::PrepareServer());
 
-	if (!Nrf::GetBoard().Init()) {
+	if (!Nrf::GetBoard().Init(ButtonEventHandler)) {
 		LOG_ERR("User interface initialization failed.");
 		return CHIP_ERROR_INCORRECT_STATE;
 	}
@@ -42,9 +54,6 @@ CHIP_ERROR AppTask::Init()
 
 	/* Initialize RF Sensing occupancy sensor */
 	ReturnErrorOnFailure(OccupancySensorRFS::Instance().Init());
-	
-	/* Start RF Sensing monitoring */
-	ReturnErrorOnFailure(OccupancySensorRFS::Instance().StartRFSensing());
 
 	return Nrf::Matter::StartServer();
 }

@@ -13,6 +13,16 @@ extern "C" {
 #endif
 
 /**
+ * @brief Enum representing the Channel Sounding state
+ */
+enum channel_sounding_state {
+    CS_STATE_UNINITIALIZED = -1,
+    CS_STATE_STOPPED,
+    CS_STATE_CONNECTING,
+    CS_STATE_STARTED
+};
+
+/**
  * @brief Initialize the Channel Sounding RAS Initiator module
  * 
  * This function initializes the Channel Sounding functionality and starts
@@ -21,6 +31,24 @@ extern "C" {
  * @return 0 on success, negative error code on failure
  */
 int channel_sounding_init(void);
+
+/**
+ * @brief Get the current Channel Sounding state
+ * 
+ * @return channel_sounding_state enum value representing the current state
+ */
+enum channel_sounding_state get_channel_sounding_state(void);
+
+/**
+ * @brief Set the Channel Sounding state (for internal use)
+ * 
+ * This function sets the current state of the Channel Sounding module.
+ * It is intended for internal use within the module only.
+ * 
+ * @param new_state The new state to set
+ * @return true if state was changed, false if it was not permitted
+ */
+bool set_channel_sounding_state(enum channel_sounding_state new_state);
 
 /**
  * @brief Enable or disable Channel Sounding procedures
@@ -32,13 +60,6 @@ int channel_sounding_init(void);
  * @return 0 on success, negative error code on failure
  */
 int channel_sounding_procedure_enable(bool enable);
-
-/**
- * @brief Check if Channel Sounding is currently enabled
- * 
- * @return true if Channel Sounding is enabled, false otherwise
- */
-bool channel_sounding_is_enabled(void);
 
 /**
  * @brief Get the latest IFFT distance estimate from Channel Sounding

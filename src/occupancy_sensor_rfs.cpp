@@ -18,6 +18,7 @@
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <platform/CHIPDeviceLayer.h>
 #include <zephyr/logging/log.h>
+#include <dk_buttons_and_leds.h>
 #include <math.h>
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
@@ -36,11 +37,10 @@ void OccupancySensorRFS::MatterEventHandler(const ChipDeviceEvent *event, intptr
             if(ConnectivityMgrImpl().IsIPv6NetworkProvisioned() &&
                         ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
                 LOG_INF("Thread is provisioned and enabled - starting Channel Sounding procedure");
-                /* Initialize Channel Sounding */
-                int err = channel_sounding_init();
-                if (err) {
-                    LOG_ERR("Channel Sounding initialization failed (err %d)", err);
-                }
+                OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
+            } else {
+                LOG_INF("Thread not ready - stopping Channel Sounding procedure");
+                OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_STOPPED);
             }
             break;
 	default:
@@ -58,12 +58,15 @@ CHIP_ERROR OccupancySensorRFS::Init()
     // Reset device cache to force fresh detection
     ResetDeviceCache();
     
-    chip::EndpointId endpointId = GetEndpointId();
-    LOG_INF("Initializing RF Sensing occupancy sensor for Endpoint %d", endpointId);
+    LOG_INF("Initializing RF Sensing occupancy sensor");
 
     // Initialize work queue and timers for deferred processing
-    k_work_init(&mRfsWork, RfsWorkHandler);
-    k_timer_init(&mRfsTimer, RfsTimerCallback, nullptr);
+    k_work_init_delayable(&mRfsWork, RfsWorkHandler);
+    k_timer_init(&mModeIndicatorTimer, ModeIndicatorTimerHandler, nullptr);
+    
+    // Set initial mode and update LED
+    mCurrentMode = RFS_MODE_STOPPED;
+    UpdateModeIndicatorLED();
 
     // Initialize Matter OccupancySensing cluster instance with RF Sensing feature
     CHIP_ERROR err = InitializeClusterInstance(BitMask<OccupancySensing::Feature, uint32_t>(OccupancySensing::Feature::kRFSensing));
@@ -73,8 +76,14 @@ CHIP_ERROR OccupancySensorRFS::Init()
     
     ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(MatterEventHandler, 0));
 
+    // Initialize Channel Sounding
+    int ret = channel_sounding_init();
+    if (ret) {
+        LOG_ERR("Channel Sounding initialization failed (err %d)", ret);
+    }
+
     mInitialized = true;
-    LOG_INF("RF Sensing occupancy sensor initialized successfully on Endpoint %d", endpointId);
+    LOG_INF("RF Sensing occupancy sensor initialized successfully");
 
     return CHIP_NO_ERROR;
 }
@@ -91,12 +100,12 @@ CHIP_ERROR OccupancySensorRFS::StartRFSensing()
         return CHIP_NO_ERROR;
     }
 
-    // Start periodic timer for RF sensing checks
-    k_timer_start(&mRfsTimer, K_MSEC(kRfSensingIntervalMs), K_MSEC(kRfSensingIntervalMs));
+    if (channel_sounding_procedure_enable(true) != 0) {
+        LOG_ERR("Failed to enable Channel Sounding procedures");
+        return CHIP_ERROR_INTERNAL;
+    }
+    
     mRfSensingActive = true;
-
-    LOG_INF("RF Sensing monitoring started (interval: %d ms, threshold: %.1f) on Endpoint %d", 
-            kRfSensingIntervalMs, (double)kIfftOccupancyThreshold, GetEndpointId());
 
     return CHIP_NO_ERROR;
 }
@@ -106,11 +115,11 @@ void OccupancySensorRFS::StopRFSensing()
     if (!mRfSensingActive) {
         return;
     }
-
-    k_timer_stop(&mRfsTimer);
-    k_timer_stop(&mUnoccupiedTimer);
+    if (channel_sounding_procedure_enable(false) != 0) {
+        LOG_ERR("Failed to disable Channel Sounding procedures");
+        return;
+    }
     mRfSensingActive = false;
-
     LOG_INF("RF Sensing monitoring stopped");
 }
 
@@ -141,30 +150,33 @@ void OccupancySensorRFS::RfsWorkHandler(k_work *work)
     // Get the sensor instance using singleton pattern
     OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
     
-    // Check RF sensing data and determine occupancy
-    bool occupied = sensor->CheckRFSensing();
-    
-    // Update occupancy state if occupied
-    LOG_DBG("RFS occupied: %d", occupied);
-    if (occupied) {
-        Nrf::PostTask([sensor] { 
-            CHIP_ERROR err = sensor->SetOccupancyState(true);
-            if (err != CHIP_NO_ERROR) {
-                LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
-            }
-        });
+    if (sensor->mRfSensingActive) {
+        // Check RF sensing data and determine occupancy
+        bool occupied = sensor->CheckRFSensing();
+        
+        // Update occupancy state if occupied
+        LOG_DBG("RFS occupied: %d", occupied);
+        if (occupied) {
+            Nrf::PostTask([sensor] { 
+                CHIP_ERROR err = sensor->SetOccupancyState(true);
+                if (err != CHIP_NO_ERROR) {
+                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                }
+            });
+        }
+        sensor->StopRFSensing();
+        // Reschedule next check based on mode
+        if (sensor->mCurrentMode == RFS_MODE_NORMAL ) {
+            k_work_schedule(&sensor->mRfsWork, K_MSEC(5000));
+        } else if (sensor->mCurrentMode == RFS_MODE_LOW_POWER) {
+            k_work_schedule(&sensor->mRfsWork, K_MSEC(25000));
+        } else {
+            // Stopped mode - do not reschedule
+        }
+    } else {
+        sensor->StartRFSensing();
+        k_work_schedule(&sensor->mRfsWork, K_MSEC(5000));
     }
-}
-
-void OccupancySensorRFS::RfsTimerCallback(k_timer *timer)
-{
-    ARG_UNUSED(timer);
-    
-    // Get the sensor instance (singleton)
-    OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
-    
-    // Schedule work to check RF sensing data
-    k_work_submit(&sensor->mRfsWork);
 }
 
 chip::EndpointId OccupancySensorRFS::GetEndpointId() const
@@ -201,15 +213,140 @@ uint8_t OccupancySensorRFS::DetectConnectedDevice() const
         }
         
         // Log the actual remote MAC address for debugging
-        LOG_INF("Detected unknown remote device MAC: %02X:%02X:%02X:%02X:%02X:%02X", 
+        LOG_WRN("Detected unknown remote device MAC: %02X:%02X:%02X:%02X:%02X:%02X - filtering should have prevented this", 
                 remote_addr[5], remote_addr[4], remote_addr[3],
                 remote_addr[2], remote_addr[1], remote_addr[0]);
+                
+        // Default to device 1 to avoid invalid endpoint issues
+        LOG_INF("Defaulting unknown device to Device 1 (endpoint 2)");
+        mConnectedDevice = 1;
+        return 1;
     } else {
         LOG_WRN("Failed to get remote device MAC address from channel sounding");
     }
-    // Unable to determine device
-    LOG_WRN("Device detection failed");
-    mConnectedDevice = 0;
-    return 0;
+    
+    // If we can't get the address, default to device 1
+    LOG_WRN("Device detection failed, defaulting to Device 1 (endpoint 2)");
+    mConnectedDevice = 1;
+    return 1;
+}
+
+void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
+{
+    if (mode == mCurrentMode) {
+        LOG_DBG("Already in requested mode: %d", mode);
+        return;
+    }
+    
+    rfs_mode_t old_mode = mCurrentMode;
+    mCurrentMode = mode;
+    
+    const char* old_mode_str = (old_mode == RFS_MODE_NORMAL) ? "NORMAL" : 
+                              (old_mode == RFS_MODE_LOW_POWER) ? "LOW_POWER" : "STOPPED";
+    const char* new_mode_str = (mode == RFS_MODE_NORMAL) ? "NORMAL" : 
+                              (mode == RFS_MODE_LOW_POWER) ? "LOW_POWER" : "STOPPED";
+    
+    LOG_INF("RFS Mode changed: %s -> %s", old_mode_str, new_mode_str);
+    
+    // Update LED indication
+    UpdateModeIndicatorLED();
+    
+    // Adjust RF sensing behavior based on mode
+    switch (mode) {
+        case RFS_MODE_NORMAL:
+        case RFS_MODE_LOW_POWER:
+            if (!mRfSensingActive) {
+                k_work_reschedule(&mRfsWork, K_NO_WAIT);
+            }
+            break;
+            
+        case RFS_MODE_STOPPED:
+            k_work_cancel_delayable(&mRfsWork);
+            StopRFSensing();
+            break;
+    }
+}
+
+void OccupancySensorRFS::ToggleRFSMode()
+{
+    rfs_mode_t new_mode;
+    
+    switch (mCurrentMode) {
+        case RFS_MODE_NORMAL:
+            new_mode = RFS_MODE_LOW_POWER;
+            break;
+        case RFS_MODE_LOW_POWER:
+            new_mode = RFS_MODE_STOPPED;
+            break;
+        case RFS_MODE_STOPPED:
+        default:
+            new_mode = RFS_MODE_NORMAL;
+            break;
+    }
+    
+    SetRFSMode(new_mode);
+}
+
+void OccupancySensorRFS::HandleButtonEvent(bool button_pressed)
+{
+    static bool button_handled = false;
+    
+    if (button_pressed && !button_handled) {
+        // Button press - toggle mode
+        LOG_DBG("Button 1 pressed - toggling RFS mode");
+        ToggleRFSMode();
+        button_handled = true;
+    } else if (!button_pressed) {
+        // Button released - reset handler flag
+        button_handled = false;
+    }
+}
+
+void OccupancySensorRFS::UpdateModeIndicatorLED()
+{
+    switch (mCurrentMode) {
+        case RFS_MODE_NORMAL:
+            // Stop blinking timer and set LED1 solid on
+            k_timer_stop(&mModeIndicatorTimer);
+            dk_set_led_on(DK_LED2);
+            LOG_INF("LED1: Normal mode - solid ON");
+            break;
+            
+        case RFS_MODE_LOW_POWER:
+            // Start blinking timer - LED will blink every 1 second
+            mLedBlinkState = false;
+            dk_set_led_off(DK_LED2);
+            k_timer_start(&mModeIndicatorTimer, K_MSEC(1000), K_MSEC(1000));
+            LOG_INF("LED1: Low power mode - blinking every 1s");
+            break;
+            
+        case RFS_MODE_STOPPED:
+            // Stop blinking timer and turn LED1 off
+            k_timer_stop(&mModeIndicatorTimer);
+            dk_set_led_off(DK_LED2);
+            LOG_INF("LED1: Stopped mode - OFF");
+            break;
+            
+        default:
+            LOG_ERR("Unknown RFS mode: %d", mCurrentMode);
+            break;
+    }
+}
+
+void OccupancySensorRFS::ModeIndicatorTimerHandler(k_timer *timer)
+{
+    ARG_UNUSED(timer);
+    
+    // Get the sensor instance (singleton)
+    OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
+    
+    if (sensor->mCurrentMode == RFS_MODE_LOW_POWER) {
+        sensor->mLedBlinkState = !sensor->mLedBlinkState;
+        if (sensor->mLedBlinkState) {
+            dk_set_led_on(DK_LED2);
+        } else {
+            dk_set_led_off(DK_LED2);
+        }
+    }
 }
 

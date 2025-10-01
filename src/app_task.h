@@ -10,6 +10,9 @@
 #include "occupancy_sensor_pir.h"
 #include "occupancy_sensor_rfs.h"
 
+#include "board/led_widget.h"
+#include "board/board.h"
+
 struct k_timer;
 
 class AppTask {
@@ -24,4 +27,5 @@ public:
 
 private:
 	CHIP_ERROR Init();
+	static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);
 };

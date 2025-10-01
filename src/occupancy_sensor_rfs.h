@@ -10,6 +10,15 @@
 #include <zephyr/kernel.h>
 
 /**
+ * @brief RFS Operating modes
+ */
+typedef enum {
+    RFS_MODE_NORMAL = 0,     /**< Normal RF sensing mode */
+    RFS_MODE_LOW_POWER = 1,  /**< Low power RF sensing mode */
+    RFS_MODE_STOPPED = 2     /**< RF sensing stopped */
+} rfs_mode_t;
+
+/**
  * @brief RF Sensing Occupancy Sensor implementation for Matter
  * 
  * This class implements an RF Sensing occupancy sensor for Matter using
@@ -62,6 +71,32 @@ public:
      */
     void StopRFSensing();
 
+    /**
+     * @brief Get current RFS operating mode
+     * 
+     * @return Current RFS mode
+     */
+    rfs_mode_t GetRFSMode() const { return mCurrentMode; }
+
+    /**
+     * @brief Set RFS operating mode
+     * 
+     * @param mode New mode to set
+     */
+    void SetRFSMode(rfs_mode_t mode);
+
+    /**
+     * @brief Toggle RFS mode (cycles through normal -> low power -> stopped -> normal)
+     */
+    void ToggleRFSMode();
+
+    /**
+     * @brief Handle button press events for mode switching
+     * 
+     * @param button_pressed true if button is pressed, false if released
+     */
+    void HandleButtonEvent(bool button_pressed);
+
 private:
     OccupancySensorRFS() = default;
     ~OccupancySensorRFS() = default;
@@ -83,13 +118,6 @@ private:
      * Periodically checks Channel Sounding IFFT values and updates occupancy state
      */
     static void RfsWorkHandler(k_work *work);
-
-    /**
-     * @brief Timer callback for periodic RF sensing checks
-     * 
-     * Schedules work to check IFFT values at regular intervals
-     */
-    static void RfsTimerCallback(k_timer *timer);
 
 
     /**
@@ -118,6 +146,16 @@ private:
      */
     void ResetDeviceCache() { mConnectedDevice = 0; }
 
+    /**
+     * @brief Update LED1 based on current RFS mode
+     */
+    void UpdateModeIndicatorLED();
+
+    /**
+     * @brief Timer callback for LED blinking in low power mode
+     */
+    static void ModeIndicatorTimerHandler(k_timer *timer);
+
     // Device identification constants - configured via Kconfig
     static constexpr uint8_t kDeviceMac1[6] = {
         (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 40) & 0xFF),
@@ -143,13 +181,15 @@ private:
     static constexpr chip::EndpointId kDevice2EndpointId = 3;  // Endpoint for device 2
     static constexpr float kIfftOccupancyThreshold = 3.0f; // IFFT < 3.0 indicates occupancy
     static constexpr uint32_t kRfSensingIntervalMs = 3000; // Check IFFT every 3 seconds
+    static constexpr uint32_t kRfSensingSlowIntervalMs = 15000; // Check IFFT every 30 seconds
     
     // Zephyr resources
-    struct k_work mRfsWork;
-    struct k_timer mRfsTimer;
-    struct k_timer mUnoccupiedTimer;
+    struct k_work_delayable mRfsWork;
+    struct k_timer mModeIndicatorTimer;  // Timer for LED blinking in low power mode
     
     // State tracking
     bool mRfSensingActive = false;
     mutable uint8_t mConnectedDevice = 0; // Cache for connected device (1, 2, or 0 for unknown)
+    rfs_mode_t mCurrentMode = RFS_MODE_NORMAL;  // Current RFS operating mode
+    bool mLedBlinkState = false;  // LED blink state for low power mode
 };
