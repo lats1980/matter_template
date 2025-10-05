@@ -65,9 +65,6 @@ void emberAfOccupancySensingClusterInitCallback(EndpointId endpointId)
 	}
 
 	uint16_t holdTime = CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
-	if (endpointId > 2) {
-		holdTime = CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC + 30;
-	}
 	OccupancySensing::Structs::HoldTimeLimitsStruct::Type holdTimeLimits = {
 		.holdTimeMin     = CONFIG_HOLD_TIME_LIMIT_MIN_SEC,
 		.holdTimeMax     = CONFIG_HOLD_TIME_LIMIT_MAX_SEC,

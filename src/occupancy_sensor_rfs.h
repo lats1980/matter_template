@@ -182,6 +182,8 @@ private:
     static constexpr float kIfftOccupancyThreshold = 3.0f; // IFFT < 3.0 indicates occupancy
     static constexpr uint32_t kRfSensingIntervalMs = 3000; // Check IFFT every 3 seconds
     static constexpr uint32_t kRfSensingSlowIntervalMs = 15000; // Check IFFT every 30 seconds
+    static constexpr uint32_t kRFSensingHoldTimeNoemal = 3 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
+    static constexpr uint32_t kRFSensingHoldTimeLowPower = 9 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
     
     // Zephyr resources
     struct k_work_delayable mRfsWork;

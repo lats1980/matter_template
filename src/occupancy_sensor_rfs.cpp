@@ -250,11 +250,40 @@ void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
     
     // Update LED indication
     UpdateModeIndicatorLED();
+ 
+    // Get the sensor instance using singleton pattern
+    OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
     
     // Adjust RF sensing behavior based on mode
     switch (mode) {
         case RFS_MODE_NORMAL:
+            Nrf::PostTask([sensor] {
+                CHIP_ERROR err;
+                err = SetHoldTime(2, kRFSensingHoldTimeNoemal);
+                if (err != CHIP_NO_ERROR) {
+                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                }
+                err = SetHoldTime(3, kRFSensingHoldTimeNoemal);
+                if (err != CHIP_NO_ERROR) {
+                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                }
+            });
+            if (!mRfSensingActive) {
+                k_work_reschedule(&mRfsWork, K_NO_WAIT);
+            }
+            break;
         case RFS_MODE_LOW_POWER:
+            Nrf::PostTask([sensor] {
+                CHIP_ERROR err;
+                err = SetHoldTime(2, kRFSensingHoldTimeLowPower);
+                if (err != CHIP_NO_ERROR) {
+                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                }
+                err = SetHoldTime(3, kRFSensingHoldTimeLowPower);
+                if (err != CHIP_NO_ERROR) {
+                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                }
+            });
             if (!mRfSensingActive) {
                 k_work_reschedule(&mRfsWork, K_NO_WAIT);
             }
