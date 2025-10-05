@@ -59,6 +59,17 @@ static const uint8_t known_device2_mac[6] = {
 #define CHANNEL_SOUNDING_THREAD_STACK_SIZE 4096
 #define CHANNEL_SOUNDING_THREAD_PRIORITY   5
 
+#define WAIT_AND_CHECK_CS_RESULT(cs_op_result)           \
+    do {                                                 \
+        (cs_op_result) = -EINPROGRESS;                   \
+        k_sem_take(&sem_cs_control, K_FOREVER);          \
+        if (cs_op_result) {                              \
+            LOG_ERR("Channel sounding thread last operation failed: err %d", \
+                    cs_op_result);                       \
+            continue;                                    \
+        }                                                \
+    } while (0)
+
 /* Thread and synchronization objects */
 static K_THREAD_STACK_DEFINE(channel_sounding_thread_stack, CHANNEL_SOUNDING_THREAD_STACK_SIZE);
 static struct k_thread channel_sounding_thread_data;
@@ -301,6 +312,7 @@ static void mtu_exchange_cb(struct bt_conn *conn, uint8_t err,
 		cs_op_result = err;
 	} else {
 		LOG_INF("MTU exchange success (%u)", bt_gatt_get_mtu(conn));
+		cs_op_result = 0;
 	}
 	k_sem_give(&sem_cs_control);
 }
@@ -328,21 +340,18 @@ static void discovery_completed_cb(struct bt_gatt_dm *dm, void *context)
 		LOG_ERR("Could not release the discovery data (err %d)", err);
 		cs_op_result = err;
 	}
+	cs_op_result = 0;
 	k_sem_give(&sem_cs_control);
 }
 
 static void discovery_service_not_found_cb(struct bt_conn *conn, void *context)
 {
 	LOG_INF("The service could not be found during the discovery, disconnecting");
-	cs_op_result = -EINVAL;
-	k_sem_give(&sem_cs_control);
 }
 
 static void discovery_error_found_cb(struct bt_conn *conn, int err, void *context)
 {
 	LOG_INF("The discovery procedure failed (err %d)", err);
-	cs_op_result = err;
-	k_sem_give(&sem_cs_control);
 }
 
 static struct bt_gatt_dm_cb discovery_cb = {
@@ -363,6 +372,7 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 		cs_op_result = err;
 	} else {
 		LOG_INF("Security changed: %s level %u", addr, level);
+		cs_op_result = 0;
 	}
 	k_sem_give(&sem_cs_control);
 }
@@ -450,6 +460,7 @@ static void remote_capabilities_cb(struct bt_conn *conn,
 
 	if (status == BT_HCI_ERR_SUCCESS) {
 		LOG_INF("CS capability exchange completed.");
+		cs_op_result = 0;
 	} else {
 		LOG_WRN("CS capability exchange failed. (HCI status 0x%02x)", status);
 		cs_op_result = status;
@@ -465,6 +476,7 @@ static void config_create_cb(struct bt_conn *conn,
 
 	if (status == BT_HCI_ERR_SUCCESS) {
 		LOG_INF("CS config creation complete. ID: %d", config->id);
+		cs_op_result = 0;
 	} else {
 		LOG_WRN("CS config creation failed. (HCI status 0x%02x)", status);
 		cs_op_result = status;
@@ -478,6 +490,7 @@ static void security_enable_cb(struct bt_conn *conn, uint8_t status)
 
 	if (status == BT_HCI_ERR_SUCCESS) {
 		LOG_INF("CS security enabled.");
+		cs_op_result = 0;
 	} else {
 		LOG_WRN("CS security enable failed. (HCI status 0x%02x)", status);
 		cs_op_result = status;
@@ -512,6 +525,7 @@ static void procedure_enable_cb(struct bt_conn *conn,
 		} else {
 			LOG_INF("CS procedures disabled.");
 		}
+		cs_op_result = 0;
 	} else {
 		LOG_WRN("CS procedures enable failed. (HCI status 0x%02x)", status);
 		cs_op_result = status;
@@ -653,6 +667,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to encrypt connection (err %d)", err);
 			continue;
 		}
+		cs_op_result = -EINPROGRESS;
 		k_sem_take(&sem_cs_control, K_FOREVER);
 		// wait and check security result
 		if (cs_op_result) {
@@ -666,24 +681,14 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("MTU exchange failed (err %d)", err);
 			continue;
 		}
-		// wait and check mtu exchange result
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		if (cs_op_result) {
-			LOG_ERR("Failed to exchange MTU: err %d", cs_op_result);
-			continue;
-		}
+		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 
 		err = bt_gatt_dm_start(connection, BT_UUID_RANGING_SERVICE, &discovery_cb, NULL);
 		if (err) {
 			LOG_ERR("Discovery failed (err %d)", err);
 			continue;
 		}
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		// wait and check discovery result
-		if (cs_op_result) {
-			LOG_ERR("Failed to discover RAS service: err %d", cs_op_result);
-			continue;
-		}
+		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 
 		const struct bt_le_cs_set_default_settings_param default_settings = {
 			.enable_initiator_role = true,
@@ -701,12 +706,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Could not get RAS features from peer (err %d)", err);
 			continue;
 		}
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		// wait and check RAS features read result
-		if (cs_op_result) {
-			LOG_ERR("Failed to read RAS features: err %d", cs_op_result);
-			continue;
-		}
+		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 
 		const bool realtime_rd = ras_feature_bits & RAS_FEAT_REALTIME_RD;
 		if (realtime_rd) {
@@ -745,12 +745,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to exchange CS capabilities (err %d)", err);
 			continue;
 		}
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		// wait and check capabilities exchange result
-		if (cs_op_result) {
-			LOG_ERR("Failed to exchange CS capabilities: err %d", cs_op_result);
-			continue;
-		}
+		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 
 		struct bt_le_cs_create_config_params config_params = {
 			.id = CS_CONFIG_ID,
@@ -775,31 +770,21 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to create CS config (err %d)", err);
 			continue;
 		}
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		// wait and check config creation result
-		if (cs_op_result) {
-			LOG_ERR("Failed to create CS config: err %d", cs_op_result);
-			continue;
-		}
+		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 
 		err = bt_le_cs_security_enable(connection);
 		if (err) {
 			LOG_ERR("Failed to start CS Security (err %d)", err);
 			return;
 		}
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		// wait and check security enable result
-		if (cs_op_result) {
-			LOG_ERR("Failed to enable CS security: err %d", cs_op_result);
-			continue;
-		}
+		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 
 		const struct bt_le_cs_set_procedure_parameters_param procedure_params = {
 			.config_id = CS_CONFIG_ID,
 			.max_procedure_len = 1000,
 			.min_procedure_interval = realtime_rd ? 5 : 10,
 			.max_procedure_interval = realtime_rd ? 5 : 10,
-			.max_procedure_count = 2,
+			.max_procedure_count = 0,
 			.min_subevent_len = 60000,
 			.max_subevent_len = 60000,
 			.tone_antenna_config_selection = BT_LE_CS_TONE_ANTENNA_CONFIGURATION_A1_B1,
@@ -826,12 +811,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to enable CS procedures (err %d)", err);
 			continue;
 		}
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		// wait and check procedure enable result
-		if (cs_op_result) {
-			LOG_ERR("Failed to enable CS procedures: err %d", cs_op_result);
-			continue;
-		}
+		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 		set_channel_sounding_state(CS_STATE_STARTED);
 		k_sem_take(&sem_cs_control, K_FOREVER);
 	}
