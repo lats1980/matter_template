@@ -50,6 +50,12 @@ config RFS_DEVICE2_MAC_ADDR
 	  Device 2 will use Matter endpoint 3 for occupancy sensing.
 	  Format: 0xAABBCCDDEEFF where AA is MSB, FF is LSB.
 
+config RFS_ACTIVATED_BY_PIR
+	bool "RF Sensing activated by PIR sensor"
+	help
+	  Enable this option to activate RF Sensing only when the PIR sensor
+	  detects motion.
+
 # Sample configuration used for Thread networking
 if OPENTHREAD
 

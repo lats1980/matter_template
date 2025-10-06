@@ -40,7 +40,6 @@ public:
      * @brief Initialize the RF Sensing occupancy sensor
      * 
      * Initializes the Matter OccupancySensing cluster with RF sensing capabilities.
-     * Uses endpoint 2 for Device 1 (DC:B8:19:90:68:51) or endpoint 3 for Device 2 (DC:B8:19:90:68:52).
      * 
      * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
      */
@@ -97,6 +96,18 @@ public:
      */
     void HandleButtonEvent(bool button_pressed);
 
+    /**
+     * @brief Check if an endpoint ID is valid for this sensor
+     * 
+     * @param endpoint The endpoint ID to check
+     * 
+     * @return true endpoint is valid, false if endpoint is not valid
+     */
+    bool IsValidEndpointId(chip::EndpointId endpoint) const
+    {
+        return (endpoint == kDevice1EndpointId) || (endpoint == kDevice2EndpointId);
+    }
+
 private:
     OccupancySensorRFS() = default;
     ~OccupancySensorRFS() = default;
@@ -104,13 +115,6 @@ private:
     // Non-copyable
     OccupancySensorRFS(const OccupancySensorRFS&) = delete;
     OccupancySensorRFS& operator=(const OccupancySensorRFS&) = delete;
-
-    /**
-     * @brief Matter event handler
-     * 
-     * Handles Matter stack events relevant to the RFS occupancy sensor
-     */
-    static void MatterEventHandler(const chip::DeviceLayer::ChipDeviceEvent *event, intptr_t data);
 
     /**
      * @brief Work handler for RF sensing monitoring
@@ -128,15 +132,6 @@ private:
      * @return true if IFFT indicates occupancy, false otherwise
      */
     bool CheckRFSensing();
-
-    /**
-     * @brief Detect which device is connected
-     * 
-     * Determines the connected device based on remote MAC address from channel sounding
-     * 
-     * @return Device number (1 or 2), 0 if unknown
-     */
-    uint8_t DetectConnectedDevice() const;
 
     /**
      * @brief Reset device detection cache
@@ -176,7 +171,7 @@ private:
     }; // Device 2 MAC from Kconfig
     
     // Configuration constants
-    static constexpr chip::EndpointId kInvalidEndpointId = 0; // Invalid endpoint ID
+    //static constexpr chip::EndpointId kInvalidEndpointId = 0; // Invalid endpoint ID
     static constexpr chip::EndpointId kDevice1EndpointId = 2;  // Endpoint for device 1
     static constexpr chip::EndpointId kDevice2EndpointId = 3;  // Endpoint for device 2
     static constexpr float kIfftOccupancyThreshold = 3.0f; // IFFT < 3.0 indicates occupancy
@@ -191,7 +186,7 @@ private:
     
     // State tracking
     bool mRfSensingActive = false;
-    mutable uint8_t mConnectedDevice = 0; // Cache for connected device (1, 2, or 0 for unknown)
+    mutable chip::EndpointId mConnectedDevice = 0; // Cache for connected device (1, 2, or 0 for unknown)
     rfs_mode_t mCurrentMode = RFS_MODE_NORMAL;  // Current RFS operating mode
     bool mLedBlinkState = false;  // LED blink state for low power mode
 };

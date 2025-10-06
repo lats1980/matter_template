@@ -28,4 +28,5 @@ public:
 private:
 	CHIP_ERROR Init();
 	static void ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged);
+	static void MatterEventHandler(const chip::DeviceLayer::ChipDeviceEvent *event, intptr_t data);
 };

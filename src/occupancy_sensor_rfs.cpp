@@ -30,24 +30,6 @@ using namespace chip::app::Clusters::OccupancySensing;
 using namespace chip::app::Clusters::OccupancySensing::Structs;
 using namespace chip::DeviceLayer;
 
-void OccupancySensorRFS::MatterEventHandler(const ChipDeviceEvent *event, intptr_t /* unused */)
-{
-	switch (event->Type) {
-        case DeviceEventType::kThreadStateChange:
-            if(ConnectivityMgrImpl().IsIPv6NetworkProvisioned() &&
-                        ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
-                LOG_INF("Thread is provisioned and enabled - starting Channel Sounding procedure");
-                OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
-            } else {
-                LOG_INF("Thread not ready - stopping Channel Sounding procedure");
-                OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_STOPPED);
-            }
-            break;
-	default:
-		break;
-	}
-}
-
 CHIP_ERROR OccupancySensorRFS::Init()
 {
     if (mInitialized) {
@@ -73,8 +55,6 @@ CHIP_ERROR OccupancySensorRFS::Init()
     if (err != CHIP_NO_ERROR) {
         return err;
     }
-    
-    ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(MatterEventHandler, 0));
 
     // Initialize Channel Sounding
     int ret = channel_sounding_init();
@@ -181,54 +161,31 @@ void OccupancySensorRFS::RfsWorkHandler(k_work *work)
 
 chip::EndpointId OccupancySensorRFS::GetEndpointId() const
 {
-    uint8_t device = DetectConnectedDevice();
-    
-    switch (device) {
-        case 1:
-            return kDevice1EndpointId; // Endpoint 2
-        case 2:
-            return kDevice2EndpointId; // Endpoint 3
-        default:
-            LOG_WRN("Unknown device, return invalid endpoint");
-            return kInvalidEndpointId;
-    }
-}
-
-uint8_t OccupancySensorRFS::DetectConnectedDevice() const
-{   
     // Get the remote connected device's MAC address from channel sounding module
     uint8_t remote_addr[6];
     bool addr_valid = channel_sounding_get_remote_address(remote_addr);
-    
+
     if (addr_valid) {
         // Compare with known device MAC addresses
         if (memcmp(remote_addr, kDeviceMac1, 6) == 0) {
             LOG_INF("Detected Device 1 - using endpoint 2");
-            mConnectedDevice = 1;
-            return 1;
+            mConnectedDevice = kDevice1EndpointId;
         } else if (memcmp(remote_addr, kDeviceMac2, 6) == 0) {
             LOG_INF("Detected Device 2 - using endpoint 3");
-            mConnectedDevice = 2;
-            return 2;
+            mConnectedDevice = kDevice2EndpointId;
+        } else {
+            // Log the actual remote MAC address for debugging
+            LOG_WRN("Detected unknown remote device MAC: %02X:%02X:%02X:%02X:%02X:%02X - filtering should have prevented this", 
+                    remote_addr[5], remote_addr[4], remote_addr[3],
+                    remote_addr[2], remote_addr[1], remote_addr[0]);
+            mConnectedDevice = kInvalidEndpointId;
         }
-        
-        // Log the actual remote MAC address for debugging
-        LOG_WRN("Detected unknown remote device MAC: %02X:%02X:%02X:%02X:%02X:%02X - filtering should have prevented this", 
-                remote_addr[5], remote_addr[4], remote_addr[3],
-                remote_addr[2], remote_addr[1], remote_addr[0]);
-                
-        // Default to device 1 to avoid invalid endpoint issues
-        LOG_INF("Defaulting unknown device to Device 1 (endpoint 2)");
-        mConnectedDevice = 1;
-        return 1;
     } else {
         LOG_WRN("Failed to get remote device MAC address from channel sounding");
+        mConnectedDevice = kInvalidEndpointId;
     }
-    
-    // If we can't get the address, default to device 1
-    LOG_WRN("Device detection failed, defaulting to Device 1 (endpoint 2)");
-    mConnectedDevice = 1;
-    return 1;
+
+    return mConnectedDevice;
 }
 
 void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
@@ -237,7 +194,15 @@ void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
         LOG_DBG("Already in requested mode: %d", mode);
         return;
     }
-    
+
+    if(!ConnectivityMgrImpl().IsIPv6NetworkProvisioned() ||
+                !ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
+        LOG_INF("Thread not ready - only allowing STOPPED mode");
+        if (mode != RFS_MODE_STOPPED) {
+            return;
+        }
+    }
+
     rfs_mode_t old_mode = mCurrentMode;
     mCurrentMode = mode;
     

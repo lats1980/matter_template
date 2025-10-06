@@ -35,6 +35,33 @@ void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChan
 	}
 }
 
+void AppTask::MatterEventHandler(const ChipDeviceEvent *event, intptr_t /* unused */)
+{
+	switch (event->Type) {
+        case DeviceEventType::kThreadStateChange:
+            if(ConnectivityMgrImpl().IsIPv6NetworkProvisioned() &&
+                        ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
+				LOG_INF("Thread is provisioned and enabled");
+#if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
+				if (OccupancySensorPIR::Instance().IsOccupied()) {
+					// if PIR is occupied, start RFS sensing
+					LOG_INF("PIR occupied - starting Channel Sounding procedure");
+					OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
+				}
+#else
+				LOG_INF("Starting Channel Sounding procedure");
+				OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
+#endif
+			} else {
+				LOG_INF("Thread not ready - stopping Channel Sounding procedure");
+                OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_STOPPED);
+            }
+            break;
+	default:
+		break;
+	}
+}
+
 CHIP_ERROR AppTask::Init()
 {
 	/* Initialize Matter stack */
@@ -48,6 +75,7 @@ CHIP_ERROR AppTask::Init()
 	/* Register Matter event handler that controls the connectivity status LED based on the captured Matter network
 	 * state. */
 	ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(Nrf::Board::DefaultMatterEventHandler, 0));
+	ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(MatterEventHandler, 0));
 
 	/* Initialize PIR occupancy sensor */
 	ReturnErrorOnFailure(OccupancySensorPIR::Instance().Init());

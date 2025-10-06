@@ -92,6 +92,11 @@ CHIP_ERROR OccupancySensorBase::SetOccupancyState(bool occupied)
 bool OccupancySensorBase::IsOccupied()
 {
     chip::EndpointId endpointId = GetEndpointId();
+
+    if (endpointId == kInvalidEndpointId) {
+        LOG_ERR("Invalid endpoint ID");
+        return false;
+    }
     chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
     Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(endpointId, &currentOccupancy);
     VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
