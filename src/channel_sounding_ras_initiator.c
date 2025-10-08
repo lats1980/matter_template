@@ -420,13 +420,6 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 			remote_device_addr[5], remote_device_addr[4], remote_device_addr[3],
 			remote_device_addr[2], remote_device_addr[1], remote_device_addr[0]);
 		
-		/* Double-check: if somehow an unknown device connected, disconnect it immediately */
-		if (!channel_sounding_is_known_device(remote_device_addr)) {
-			LOG_ERR("Connected to unknown device - disconnecting immediately");
-			bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-			return;
-		}
-		
 		LOG_INF("Confirmed connection to known RF sensing device");
 	} else {
 		remote_address_valid = false;
@@ -551,17 +544,7 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 	char addr[BT_ADDR_LE_STR_LEN];
 
 	bt_addr_le_to_str(device_info->recv_info->addr, addr, sizeof(addr));
-
 	LOG_INF("Filters matched. Address: %s connectable: %d", addr, connectable);
-	
-	// Check if this is a known RF sensing device before allowing connection
-	if (!channel_sounding_is_known_device(device_info->recv_info->addr->a.val)) {
-		LOG_WRN("Ignoring connection to unknown device: %s", addr);
-		// Continue scanning instead of connecting to unknown device
-		return;
-	}
-	
-	LOG_INF("Known RF sensing device detected: %s - allowing connection", addr);
 	bt_scan_stop();
 }
 
@@ -588,6 +571,7 @@ BT_SCAN_CB_INIT(scan_cb, scan_filter_match, NULL, scan_connecting_error, scan_co
 static int scan_init(void)
 {
 	int err;
+	bt_addr_le_t addr;
 
 	struct bt_scan_init_param param = {
 		.scan_param = NULL, .conn_param = BT_LE_CONN_PARAM_DEFAULT, .connect_if_match = 1};
@@ -595,13 +579,24 @@ static int scan_init(void)
 	bt_scan_init(&param);
 	bt_scan_cb_register(&scan_cb);
 
-	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_UUID, BT_UUID_RANGING_SERVICE);
+	/* Add known device addresses to the filter */
+	addr.type = BT_ADDR_LE_RANDOM;
+	memcpy(&addr.a.val, known_device1_mac, 6);
+	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_ADDR, &addr);
 	if (err) {
 		LOG_ERR("Scanning filters cannot be set (err %d)", err);
 		return err;
 	}
 
-	err = bt_scan_filter_enable(BT_SCAN_UUID_FILTER, false);
+	addr.type = BT_ADDR_LE_RANDOM;
+	memcpy(&addr.a.val, known_device2_mac, 6);
+	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_ADDR, &addr);
+	if (err) {
+		LOG_ERR("Scanning filters cannot be set (err %d)", err);
+		return err;
+	}
+
+	err = bt_scan_filter_enable(BT_SCAN_ADDR_FILTER, false);
 	if (err) {
 		LOG_ERR("Filters cannot be turned on (err %d)", err);
 		return err;
@@ -957,29 +952,6 @@ bool channel_sounding_get_distance(float *distance)
 	LOG_DBG("Retrieved distance: %.2f", (double)*distance);
 
 	return true;
-}
-
-bool channel_sounding_is_known_device(const uint8_t *addr)
-{
-	if (!addr) {
-		return false;
-	}
-
-	// Check if it matches Device 1
-	if (memcmp(addr, known_device1_mac, 6) == 0) {
-		LOG_DBG("Device matches known Device 1");
-		return true;
-	}
-
-	// Check if it matches Device 2
-	if (memcmp(addr, known_device2_mac, 6) == 0) {
-		LOG_DBG("Device matches known Device 2");
-		return true;
-	}
-
-	LOG_DBG("Unknown device: %02X:%02X:%02X:%02X:%02X:%02X",
-		addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
-	return false;
 }
 
 bool channel_sounding_get_remote_address(uint8_t *remote_addr)

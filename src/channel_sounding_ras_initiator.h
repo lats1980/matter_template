@@ -83,17 +83,6 @@ bool channel_sounding_get_distance(float *distance);
  */
 bool channel_sounding_get_remote_address(uint8_t *remote_addr);
 
-/**
- * @brief Check if a Bluetooth address is a known RF sensing device
- * 
- * This function checks if the given MAC address matches any of the configured
- * RF sensing devices (Device 1 or Device 2).
- * 
- * @param addr Bluetooth address to check (6 bytes)
- * @return true if the address matches a known device, false otherwise
- */
-bool channel_sounding_is_known_device(const uint8_t *addr);
-
 #ifdef __cplusplus
 }
 #endif
