@@ -543,6 +543,24 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 {
 	char addr[BT_ADDR_LE_STR_LEN];
 
+	if (!device_info) {
+		LOG_ERR("No device info");
+		return;
+	}
+
+	if (!device_info->recv_info) {
+		LOG_ERR("No device recv info");
+		return;
+	}
+
+	/* Filter out devices with weak signal strength */
+	if (device_info->recv_info->rssi < CONFIG_RFS_FILTER_RSSI_THRESHOLD) {
+		LOG_DBG("Device RSSI %d dBm below threshold %d dBm, ignoring",
+			device_info->recv_info->rssi,
+			CONFIG_RFS_FILTER_RSSI_THRESHOLD);
+		return;
+	}
+
 	bt_addr_le_to_str(device_info->recv_info->addr, addr, sizeof(addr));
 	LOG_INF("Filters matched. Address: %s connectable: %d", addr, connectable);
 	bt_scan_stop();

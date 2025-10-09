@@ -56,6 +56,13 @@ config RFS_ACTIVATED_BY_PIR
 	  Enable this option to activate RF Sensing only when the PIR sensor
 	  detects motion.
 
+config RFS_FILTER_RSSI_THRESHOLD
+	int "RF Sensing filter RSSI threshold"
+	default -85
+	range -127 -70
+	help
+	  RSSI threshold (in dBm) for filtering out weak RF signals.
+
 # Sample configuration used for Thread networking
 if OPENTHREAD
 
