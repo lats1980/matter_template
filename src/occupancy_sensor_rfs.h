@@ -174,7 +174,7 @@ private:
     //static constexpr chip::EndpointId kInvalidEndpointId = 0; // Invalid endpoint ID
     static constexpr chip::EndpointId kDevice1EndpointId = 2;  // Endpoint for device 1
     static constexpr chip::EndpointId kDevice2EndpointId = 3;  // Endpoint for device 2
-    static constexpr float kIfftOccupancyThreshold = 3.0f; // IFFT < 3.0 indicates occupancy
+    static constexpr float kOccupancyThreshold = 3.0f; // distance < 3.0m indicates occupancy
     static constexpr uint32_t kRfSensingIntervalMs = 3000; // Check IFFT every 3 seconds
     static constexpr uint32_t kRfSensingSlowIntervalMs = 15000; // Check IFFT every 30 seconds
     static constexpr uint32_t kRFSensingHoldTimeNoemal = 3 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;

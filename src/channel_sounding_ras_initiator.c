@@ -916,14 +916,15 @@ int channel_sounding_procedure_enable(bool enable)
 	return 0;
 }
 
-bool channel_sounding_get_ifft_distance(float *ifft_distance)
+bool channel_sounding_get_distance(float *distance)
 {
-	if (!ifft_distance) {
+	if (!distance) {
+		LOG_ERR("Invalid distance pointer");
 		return false;
 	}
 
 	if (get_channel_sounding_state() != CS_STATE_STARTED) {
-		LOG_DBG("Channel Sounding not started");
+		LOG_ERR("Channel Sounding not started");
 		return false;
 	}
 
@@ -933,16 +934,27 @@ bool channel_sounding_get_ifft_distance(float *ifft_distance)
 	}
 
 	/* Get distance estimates for antenna path 0 (first antenna) */
-	cs_de_dist_estimates_t distance_on_ap0 = get_distance(0);
-
+	cs_de_dist_estimates_t distance_on_ap = get_distance(0);
+	LOG_DBG("Distance estimate: ifft: %f, "
+		"phase_slope: %f, rtt: %f",
+		(double)distance_on_ap.ifft,
+		(double)distance_on_ap.phase_slope,
+		(double)distance_on_ap.rtt);
 	/* Check if IFFT estimate is valid (finite number) */
-	if (!isfinite(distance_on_ap0.ifft)) {
-		LOG_DBG("IFFT distance estimate is not finite");
+	if (isfinite(distance_on_ap.ifft)) {
+		*distance = distance_on_ap.ifft;
+	} else if (isfinite(distance_on_ap.phase_slope)) {
+		*distance = distance_on_ap.phase_slope;
+		LOG_WRN("IFFT distance estimate not available, using phase slope estimate instead");
+	} else if (isfinite(distance_on_ap.rtt)) {
+		*distance = distance_on_ap.rtt;
+		LOG_WRN("IFFT and phase slope distance estimates not available, using RTT estimate instead");
+	} else {
+		LOG_DBG("No valid distance estimates available on antenna path 0");
 		return false;
 	}
 
-	*ifft_distance = distance_on_ap0.ifft;
-	LOG_DBG("Retrieved IFFT distance: %.2f", (double)*ifft_distance);
+	LOG_DBG("Retrieved distance: %.2f", (double)*distance);
 
 	return true;
 }

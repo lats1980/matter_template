@@ -106,19 +106,19 @@ void OccupancySensorRFS::StopRFSensing()
 
 bool OccupancySensorRFS::CheckRFSensing()
 {
-    float ifft_distance = 0.0f;
+    float distance = 0.0f;
     
-    // Get IFFT distance from Channel Sounding
-    if (!channel_sounding_get_ifft_distance(&ifft_distance)) {
-        LOG_DBG("Failed to get IFFT distance from Channel Sounding");
+    // Get distance from Channel Sounding
+    if (!channel_sounding_get_distance(&distance)) {
+        LOG_DBG("Failed to get distance from Channel Sounding");
         return false; // No valid data, assume unoccupied
     }
 
-    // Check if IFFT indicates occupancy
-    bool occupied = (ifft_distance < kIfftOccupancyThreshold);
+    // Check if distance indicates occupancy
+    bool occupied = (distance < kOccupancyThreshold);
     
-    LOG_DBG("RF Sensing check: IFFT=%.2f, threshold=%.1f, occupied=%s", 
-            (double)ifft_distance, (double)kIfftOccupancyThreshold, occupied ? "YES" : "NO");
+    LOG_DBG("RF Sensing check: distance=%.2f, threshold=%.1f, occupied=%s", 
+            (double)distance, (double)kOccupancyThreshold, occupied ? "YES" : "NO");
     
     return occupied;
 }

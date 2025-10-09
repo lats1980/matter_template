@@ -62,15 +62,15 @@ bool set_channel_sounding_state(enum channel_sounding_state new_state);
 int channel_sounding_procedure_enable(bool enable);
 
 /**
- * @brief Get the latest IFFT distance estimate from Channel Sounding
+ * @brief Get the latest distance estimate from Channel Sounding
  * 
- * This function retrieves the most recent IFFT distance estimate from
- * the first antenna path. Used by RF sensing occupancy detection.
+ * This function retrieves the most recent distance estimate from
+ * the antenna path. Used by RF sensing occupancy detection.
  * 
- * @param ifft_distance Pointer to store the IFFT distance value
- * @return true if valid IFFT distance is available, false otherwise
+ * @param distance Pointer to store the distance value
+ * @return true if valid distance is available, false otherwise
  */
-bool channel_sounding_get_ifft_distance(float *ifft_distance);
+bool channel_sounding_get_distance(float *distance);
 
 /**
  * @brief Get the remote connected device's Bluetooth address
