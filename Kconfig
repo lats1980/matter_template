@@ -90,6 +90,13 @@ config RFS_FILTER_RSSI_THRESHOLD
 	help
 	  RSSI threshold (in dBm) for filtering out weak RF signals.
 
+config RFS_OCCUPANCY_THRESHOLD
+	int "RF Sensing occupancy threshold"
+	default 5
+	range 2 10
+	help
+	  Range of valid RF signals required to determine occupancy in meter.
+
 # Sample configuration used for Thread networking
 if OPENTHREAD
 
