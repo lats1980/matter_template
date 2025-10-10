@@ -147,15 +147,18 @@ void OccupancySensorRFS::RfsWorkHandler(k_work *work)
         sensor->StopRFSensing();
         // Reschedule next check based on mode
         if (sensor->mCurrentMode == RFS_MODE_NORMAL ) {
-            k_work_schedule(&sensor->mRfsWork, K_MSEC(5000));
+            sensor->kRfSensingOperationIntervalMs = CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS;
+            k_work_schedule(&sensor->mRfsWork, K_MSEC(sensor->kRfSensingOperationIntervalMs));
         } else if (sensor->mCurrentMode == RFS_MODE_LOW_POWER) {
-            k_work_schedule(&sensor->mRfsWork, K_MSEC(25000));
+            sensor->kRfSensingOperationIntervalMs = CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS;
+            k_work_schedule(&sensor->mRfsWork, K_MSEC(sensor->kRfSensingOperationIntervalMs));
         } else {
             // Stopped mode - do not reschedule
         }
     } else {
         sensor->StartRFSensing();
-        k_work_schedule(&sensor->mRfsWork, K_MSEC(5000));
+        sensor->kRfSensingOperationIntervalMs = CONFIG_RFS_SENSING_ACTIVE_INTERVAL_MS;
+        k_work_schedule(&sensor->mRfsWork, K_MSEC(sensor->kRfSensingOperationIntervalMs));
     }
 }
 
@@ -224,11 +227,11 @@ void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
         case RFS_MODE_NORMAL:
             Nrf::PostTask([sensor] {
                 CHIP_ERROR err;
-                err = SetHoldTime(2, kRFSensingHoldTimeNoemal);
+                err = SetHoldTime(2, kRFSensingHoldTimeNormal);
                 if (err != CHIP_NO_ERROR) {
                     LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
                 }
-                err = SetHoldTime(3, kRFSensingHoldTimeNoemal);
+                err = SetHoldTime(3, kRFSensingHoldTimeNormal);
                 if (err != CHIP_NO_ERROR) {
                     LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
                 }

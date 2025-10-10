@@ -22,7 +22,7 @@ typedef enum {
  * @brief RF Sensing Occupancy Sensor implementation for Matter
  * 
  * This class implements an RF Sensing occupancy sensor for Matter using
- * Channel Sounding IFFT data for occupancy detection, inheriting common
+ * Channel Sounding distance data for occupancy detection, inheriting common
  * functionality from OccupancySensorBase.
  */
 class OccupancySensorRFS : public OccupancySensorBase {
@@ -57,7 +57,7 @@ public:
     /**
      * @brief Start RF sensing monitoring
      * 
-     * Begins periodic monitoring of Channel Sounding IFFT values
+     * Begins periodic monitoring of Channel Sounding distance values
      * 
      * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
      */
@@ -66,7 +66,7 @@ public:
     /**
      * @brief Stop RF sensing monitoring
      * 
-     * Stops periodic monitoring of Channel Sounding IFFT values
+     * Stops periodic monitoring of Channel Sounding distance values
      */
     void StopRFSensing();
 
@@ -119,17 +119,17 @@ private:
     /**
      * @brief Work handler for RF sensing monitoring
      * 
-     * Periodically checks Channel Sounding IFFT values and updates occupancy state
+     * Periodically checks Channel Sounding distance values and updates occupancy state
      */
     static void RfsWorkHandler(k_work *work);
 
 
     /**
-     * @brief Check IFFT values and determine occupancy
+     * @brief Check distance values and determine occupancy
      * 
-     * Gets IFFT values from Channel Sounding and determines if space is occupied
+     * Gets distance values from Channel Sounding and determines if space is occupied
      * 
-     * @return true if IFFT indicates occupancy, false otherwise
+     * @return true if distance indicates occupancy, false otherwise
      */
     bool CheckRFSensing();
 
@@ -175,9 +175,7 @@ private:
     static constexpr chip::EndpointId kDevice1EndpointId = 2;  // Endpoint for device 1
     static constexpr chip::EndpointId kDevice2EndpointId = 3;  // Endpoint for device 2
     static constexpr float kOccupancyThreshold = 3.0f; // distance < 3.0m indicates occupancy
-    static constexpr uint32_t kRfSensingIntervalMs = 3000; // Check IFFT every 3 seconds
-    static constexpr uint32_t kRfSensingSlowIntervalMs = 15000; // Check IFFT every 30 seconds
-    static constexpr uint32_t kRFSensingHoldTimeNoemal = 3 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
+    static constexpr uint32_t kRFSensingHoldTimeNormal = 3 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
     static constexpr uint32_t kRFSensingHoldTimeLowPower = 9 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
     
     // Zephyr resources
@@ -189,4 +187,5 @@ private:
     mutable chip::EndpointId mConnectedDevice = 0; // Cache for connected device (1, 2, or 0 for unknown)
     rfs_mode_t mCurrentMode = RFS_MODE_NORMAL;  // Current RFS operating mode
     bool mLedBlinkState = false;  // LED blink state for low power mode
+    uint32_t kRfSensingOperationIntervalMs; // next operation interval based on mode
 };

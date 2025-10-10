@@ -56,6 +56,33 @@ config RFS_ACTIVATED_BY_PIR
 	  Enable this option to activate RF Sensing only when the PIR sensor
 	  detects motion.
 
+config RFS_SENSING_ACTIVE_INTERVAL_MS
+	int "RF Sensing active interval"
+	default 7000
+	range 1000 60000
+	help
+	  Time interval (in milliseconds) for which RF Sensing remains active
+	  before going to sleep (if RFS_ACTIVATED_BY_PIR is enabled, this
+	  interval starts after PIR sensor detects motion).
+
+config RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS
+	int "RF Sensing inactive interval in normal mode"
+	default 3000
+	range 1000 60000
+	help
+	  Time interval (in milliseconds) in normal mode for which RF Sensing
+	  remains inactive (if RFS_ACTIVATED_BY_PIR is enabled, this interval
+	  starts after the active interval ends).
+
+config RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS
+	int "RF Sensing inactive interval in low power mode"
+	default 30000
+	range 1000 60000
+	help
+	  Time interval (in milliseconds) in low power mode for which RF Sensing
+	  remains inactive (if RFS_ACTIVATED_BY_PIR is enabled, this interval
+	  starts after the active interval ends).
+
 config RFS_FILTER_RSSI_THRESHOLD
 	int "RF Sensing filter RSSI threshold"
 	default -85
