@@ -82,6 +82,7 @@ static K_MUTEX_DEFINE(distance_estimate_buffer_mutex);
 static K_MUTEX_DEFINE(cs_procedure_mutex);
 
 static struct bt_conn *connection;
+static struct bt_conn *auth_conn;
 NET_BUF_SIMPLE_DEFINE_STATIC(latest_local_steps, LOCAL_PROCEDURE_MEM);
 NET_BUF_SIMPLE_DEFINE_STATIC(latest_peer_steps, BT_RAS_PROCEDURE_MEM);
 static int32_t most_recent_local_ranging_counter = PROCEDURE_COUNTER_NONE;
@@ -431,10 +432,19 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 
 static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 {
-	LOG_INF("Disconnected (reason 0x%02X)", reason);
+	char addr[BT_ADDR_LE_STR_LEN];
 
 	if (conn != connection) {
+		LOG_ERR("Disconnected from unknown connection");
 		return;
+	}
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_INF("Disconnected (reason 0x%02X)", reason);
+
+	if (auth_conn) {
+		bt_conn_unref(auth_conn);
+		auth_conn = NULL;
 	}
 
 	bt_conn_unref(conn);
@@ -623,6 +633,51 @@ static int scan_init(void)
 	return 0;
 }
 
+static void auth_cancel(struct bt_conn *conn)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	LOG_INF("Pairing cancelled: %s", addr);
+}
+
+static void pairing_complete(struct bt_conn *conn, bool bonded)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	LOG_INF("Pairing completed: %s, bonded: %d", addr, bonded);
+
+	if (!bonded) {
+		LOG_WRN("Device not bonded, disconnecting: %s", addr);
+		bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
+	}
+}
+
+static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	LOG_WRN("Pairing failed conn: %s, reason %d %s", addr, reason,
+		bt_security_err_to_str(reason));
+
+	LOG_WRN("Bonding required but pairing failed, disconnecting: %s", addr);
+	bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
+}
+
+static struct bt_conn_auth_cb conn_auth_callbacks = {
+	.cancel = auth_cancel,
+};
+
+static struct bt_conn_auth_info_cb conn_auth_info_callbacks = {
+	.pairing_complete = pairing_complete,
+	.pairing_failed = pairing_failed
+};
+
 BT_CONN_CB_DEFINE(conn_cb) = {
 	.connected = connected_cb,
 	.disconnected = disconnected_cb,
@@ -645,6 +700,18 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 
 	LOG_INF("Init Channel Sounding thread");
 
+	err = bt_conn_auth_cb_register(&conn_auth_callbacks);
+	if (err) {
+		LOG_ERR("Failed to register authorization callbacks.");
+		return;
+	}
+
+	err = bt_conn_auth_info_cb_register(&conn_auth_info_callbacks);
+	if (err) {
+		LOG_ERR("Failed to register authorization info callbacks.");
+		return;
+	}
+
 	err = scan_init();
 	if (err) {
 		LOG_ERR("Scan init failed (err %d)", err);
@@ -658,6 +725,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		cs_op_result = 0;
 		if (connection) {
 			LOG_INF("Disconnecting existing connection");
+			bt_ras_rreq_free(connection);
 			bt_conn_disconnect(connection, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		}
 		bt_scan_stop();
