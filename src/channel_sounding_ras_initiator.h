@@ -66,15 +66,15 @@ int channel_sounding_procedure_enable(bool enable);
 int channel_sounding_set_inactive_interval(uint32_t interval_ms);
 
 /**
- * @brief Get the remote connected device's Bluetooth address
+ * @brief Set address filter for Channel Sounding procedures
  * 
- * This function retrieves the Bluetooth address of the currently connected
- * remote device. Used for device identification in occupancy sensing.
+ * This function configures the Channel Sounding to only interact with
+ * the device having the specified Bluetooth LE address.
  * 
- * @param remote_addr Pointer to store the remote device address (6 bytes)
- * @return true if a device is connected and address is available, false otherwise
+ * @param addr Pointer to the Bluetooth LE address to filter by
+ * @return 0 on success, negative error code on failure
  */
-bool channel_sounding_get_remote_address(uint8_t *remote_addr);
+int channel_sounding_set_filter_by_addr(const bt_addr_le_t *addr);
 
 #ifdef __cplusplus
 }

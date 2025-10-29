@@ -114,6 +114,9 @@ private:
      */
     static void ModeIndicatorTimerHandler(k_timer *timer);
 
+    uint8_t remote_device_addr[6];
+    bool remote_address_valid = false;
+
     // Device identification constants - configured via Kconfig
     static constexpr uint8_t kDeviceMac1[6] = {
         (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 40) & 0xFF),
