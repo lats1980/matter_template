@@ -99,8 +99,16 @@ static cs_de_dist_estimates_t distance_estimate_buffer[MAX_AP][DE_SLIDING_WINDOW
 
 /* Channel Sounding control variables */
 static int cs_op_result;
+static bool cs_procedure_running = false;
+static uint32_t cs_inactive_interval = CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS;
 
 static enum channel_sounding_state cs_state = CS_STATE_UNINITIALIZED;
+
+static channel_sounding_event_handler_t event_handler_cb;
+struct k_work_delayable channel_sounding_work;
+
+static bool set_channel_sounding_state(enum channel_sounding_state new_state);
+static int channel_sounding_get_distance(float *distance);
 
 static void store_distance_estimates(cs_de_report_t *p_report)
 {
@@ -730,13 +738,16 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		}
 		bt_scan_stop();
 		set_channel_sounding_state(CS_STATE_STOPPED);
+		if (cs_procedure_running) {
+			k_work_schedule(&channel_sounding_work, K_MSEC(cs_inactive_interval));
+		}
 		k_sem_take(&sem_cs_control, K_FOREVER);
+		set_channel_sounding_state(CS_STATE_CONNECTING);
 		err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
 		if (err) {
 			LOG_ERR("Scanning failed to start (err %i)", err);
 			continue;
 		}
-		set_channel_sounding_state(CS_STATE_CONNECTING);
 		// wait for connection
 		k_sem_take(&sem_cs_control, K_FOREVER);
 		if (!connection) {
@@ -894,11 +905,28 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		}
 		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
 		set_channel_sounding_state(CS_STATE_STARTED);
+		LOG_INF("Channel Sounding started successfully");
+		k_work_reschedule(&channel_sounding_work,
+			      K_MSEC(CONFIG_RFS_SENSING_ACTIVE_INTERVAL_MS));
+		// wait for stop request
 		k_sem_take(&sem_cs_control, K_FOREVER);
+		float distance;
+
+		err = channel_sounding_get_distance(&distance);
+		if (err == 0) {
+			event_handler_cb(connection, distance);
+		}
 	}
 }
 
-int channel_sounding_init(void)
+void channel_sounding_work_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	k_sem_give(&sem_cs_control);
+}
+
+int channel_sounding_init(channel_sounding_event_handler_t event_handler)
 {
 	if (get_channel_sounding_state() != CS_STATE_UNINITIALIZED) {
 		LOG_INF("Channel Sounding already initialized");
@@ -906,6 +934,9 @@ int channel_sounding_init(void)
 	}
 
 	LOG_INF("Initializing Channel Sounding");
+
+	event_handler_cb = event_handler;
+	k_work_init_delayable(&channel_sounding_work, channel_sounding_work_handler);
 
 	/* Create the Channel Sounding thread */
 	channel_sounding_thread_id = k_thread_create(&channel_sounding_thread_data,
@@ -978,40 +1009,42 @@ int channel_sounding_procedure_enable(bool enable)
 		LOG_ERR("Channel Sounding not initialized");
 		return -ENOTCONN;
 	}
-
-	if (enable) {
-		if (get_channel_sounding_state() != CS_STATE_STOPPED) {
-			LOG_WRN("Channel Sounding already started or starting");
-		} else {
-			k_sem_give(&sem_cs_control);	
+	if (enable == cs_procedure_running) {
+		LOG_INF("Channel Sounding procedures already %s",
+			enable ? "enabled" : "disabled");
+		return 0;
+	}
+	/* Notify the Channel Sounding thread to start/stop procedures */
+	if (cs_procedure_running) {
+		LOG_INF("Stopping Channel Sounding procedures");
+		if (get_channel_sounding_state() == CS_STATE_STOPPED) {
+			k_work_cancel_delayable(&channel_sounding_work);
 		}
 	} else {
-		if (get_channel_sounding_state() == CS_STATE_STOPPED) {
-			LOG_WRN("Channel Sounding already stopped");
-		} else {
-			k_sem_give(&sem_cs_control);
-		}
+		LOG_INF("Starting Channel Sounding procedures");
+		k_sem_give(&sem_cs_control);
 	}
-	LOG_INF("Channel Sounding procedures %s", enable ? "enabled" : "disabled");
+	cs_procedure_running = enable;
+	LOG_INF("Channel Sounding procedures %s", cs_procedure_running ? "enabled" : "disabled");
 
 	return 0;
 }
 
-bool channel_sounding_get_distance(float *distance)
+static int channel_sounding_get_distance(float *distance)
 {
 	if (!distance) {
 		LOG_ERR("Invalid distance pointer");
-		return false;
+		return -EINVAL;
 	}
 
 	if (get_channel_sounding_state() != CS_STATE_STARTED) {
 		LOG_ERR("Channel Sounding not started");
-		return false;
+		return -EINVAL;
 	}
 
 	if (buffer_num_valid == 0) {
 		LOG_DBG("No valid distance estimates available");
-		return false;
+		return -EINVAL;
 	}
 
 	/* Get distance estimates for antenna path 0 (first antenna) */
@@ -1032,12 +1065,26 @@ bool channel_sounding_get_distance(float *distance)
 		LOG_WRN("IFFT and phase slope distance estimates not available, using RTT estimate instead");
 	} else {
 		LOG_DBG("No valid distance estimates available on antenna path 0");
-		return false;
+		return -EINVAL;
 	}
 
 	LOG_DBG("Retrieved distance: %.2f", (double)*distance);
 
-	return true;
+	return 0;
+}
+
+int channel_sounding_set_inactive_interval(uint32_t interval_ms)
+{
+	if (cs_inactive_interval == interval_ms) {
+		LOG_INF("Channel Sounding inactive interval already set to %u ms", interval_ms);
+		return 0;
+	}
+	cs_inactive_interval = interval_ms;
+	LOG_INF("Channel Sounding inactive interval set to %u ms", cs_inactive_interval);
+	if (get_channel_sounding_state() == CS_STATE_STOPPED && cs_procedure_running) {
+		k_work_reschedule(&channel_sounding_work, K_MSEC(cs_inactive_interval));
+	}
+	return 0;
 }
 
 bool channel_sounding_get_remote_address(uint8_t *remote_addr)
@@ -1059,4 +1106,3 @@ bool channel_sounding_get_remote_address(uint8_t *remote_addr)
 	
 	return true;
 }
-

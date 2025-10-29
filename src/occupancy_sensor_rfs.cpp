@@ -30,20 +30,31 @@ using namespace chip::app::Clusters::OccupancySensing;
 using namespace chip::app::Clusters::OccupancySensing::Structs;
 using namespace chip::DeviceLayer;
 
+void OccupancySensorRFS::RfsEventHandler(struct bt_conn *conn, float distance)
+{
+    LOG_DBG("Channel Sounding event received");
+
+    if (distance < kOccupancyThreshold) {
+        LOG_DBG("Distance %.2f below threshold %.1f - setting occupied", (double)distance, (double)kOccupancyThreshold);
+        Nrf::PostTask([] {
+            CHIP_ERROR err = OccupancySensorRFS::Instance().SetOccupancyState(true);
+            if (err != CHIP_NO_ERROR) {
+                LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+            }
+        });
+    }
+}
+
 CHIP_ERROR OccupancySensorRFS::Init()
 {
     if (mInitialized) {
         LOG_INF("RF Sensing occupancy sensor already initialized");
         return CHIP_NO_ERROR;
     }
-
-    // Reset device cache to force fresh detection
-    ResetDeviceCache();
     
     LOG_INF("Initializing RF Sensing occupancy sensor");
 
-    // Initialize work queue and timers for deferred processing
-    k_work_init_delayable(&mRfsWork, RfsWorkHandler);
+    // Initialize timers for deferred processing
     k_timer_init(&mModeIndicatorTimer, ModeIndicatorTimerHandler, nullptr);
     
     // Set initial mode and update LED
@@ -57,7 +68,7 @@ CHIP_ERROR OccupancySensorRFS::Init()
     }
 
     // Initialize Channel Sounding
-    int ret = channel_sounding_init();
+    int ret = channel_sounding_init(OccupancySensorRFS::RfsEventHandler);
     if (ret) {
         LOG_ERR("Channel Sounding initialization failed (err %d)", ret);
     }
@@ -66,100 +77,6 @@ CHIP_ERROR OccupancySensorRFS::Init()
     LOG_INF("RF Sensing occupancy sensor initialized successfully");
 
     return CHIP_NO_ERROR;
-}
-
-CHIP_ERROR OccupancySensorRFS::StartRFSensing()
-{
-    if (!mInitialized) {
-        LOG_ERR("RF Sensing sensor not initialized");
-        return CHIP_ERROR_INCORRECT_STATE;
-    }
-
-    if (mRfSensingActive) {
-        LOG_INF("RF Sensing monitoring already active");
-        return CHIP_NO_ERROR;
-    }
-
-    if (channel_sounding_procedure_enable(true) != 0) {
-        LOG_ERR("Failed to enable Channel Sounding procedures");
-        return CHIP_ERROR_INTERNAL;
-    }
-    
-    mRfSensingActive = true;
-
-    return CHIP_NO_ERROR;
-}
-
-void OccupancySensorRFS::StopRFSensing()
-{
-    if (!mRfSensingActive) {
-        return;
-    }
-    if (channel_sounding_procedure_enable(false) != 0) {
-        LOG_ERR("Failed to disable Channel Sounding procedures");
-        return;
-    }
-    mRfSensingActive = false;
-    LOG_INF("RF Sensing monitoring stopped");
-}
-
-
-bool OccupancySensorRFS::CheckRFSensing()
-{
-    float distance = 0.0f;
-    
-    // Get distance from Channel Sounding
-    if (!channel_sounding_get_distance(&distance)) {
-        LOG_DBG("Failed to get distance from Channel Sounding");
-        return false; // No valid data, assume unoccupied
-    }
-
-    // Check if distance indicates occupancy
-    bool occupied = (distance < kOccupancyThreshold);
-    
-    LOG_DBG("RF Sensing check: distance=%.2f, threshold=%.1f, occupied=%s", 
-            (double)distance, (double)kOccupancyThreshold, occupied ? "YES" : "NO");
-    
-    return occupied;
-}
-
-void OccupancySensorRFS::RfsWorkHandler(k_work *work)
-{
-    ARG_UNUSED(work);
-    
-    // Get the sensor instance using singleton pattern
-    OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
-    
-    if (sensor->mRfSensingActive) {
-        // Check RF sensing data and determine occupancy
-        bool occupied = sensor->CheckRFSensing();
-        
-        // Update occupancy state if occupied
-        LOG_DBG("RFS occupied: %d", occupied);
-        if (occupied) {
-            Nrf::PostTask([sensor] { 
-                CHIP_ERROR err = sensor->SetOccupancyState(true);
-                if (err != CHIP_NO_ERROR) {
-                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
-                }
-            });
-        }
-        sensor->StopRFSensing();
-        // Reschedule next check based on mode
-        if (sensor->mCurrentMode == RFS_MODE_NORMAL ) {
-            sensor->kRfSensingOperationIntervalMs = CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS;
-            k_work_schedule(&sensor->mRfsWork, K_MSEC(sensor->kRfSensingOperationIntervalMs));
-        } else if (sensor->mCurrentMode == RFS_MODE_LOW_POWER) {
-            sensor->kRfSensingOperationIntervalMs = CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS;
-            k_work_schedule(&sensor->mRfsWork, K_MSEC(sensor->kRfSensingOperationIntervalMs));
-        } else {
-            // Stopped mode - do not reschedule
-        }
-    } else {
-        sensor->StartRFSensing();
-        sensor->kRfSensingOperationIntervalMs = CONFIG_RFS_SENSING_ACTIVE_INTERVAL_MS;
-        k_work_schedule(&sensor->mRfsWork, K_MSEC(sensor->kRfSensingOperationIntervalMs));
-    }
 }
 
 chip::EndpointId OccupancySensorRFS::GetEndpointId() const
@@ -236,9 +153,8 @@ void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
                     LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
                 }
             });
-            if (!mRfSensingActive) {
-                k_work_reschedule(&mRfsWork, K_NO_WAIT);
-            }
+            channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS);
+            channel_sounding_procedure_enable(true);
             break;
         case RFS_MODE_LOW_POWER:
             Nrf::PostTask([sensor] {
@@ -252,14 +168,12 @@ void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
                     LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
                 }
             });
-            if (!mRfSensingActive) {
-                k_work_reschedule(&mRfsWork, K_NO_WAIT);
-            }
+            channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS);
+            channel_sounding_procedure_enable(true);
             break;
             
         case RFS_MODE_STOPPED:
-            k_work_cancel_delayable(&mRfsWork);
-            StopRFSensing();
+            channel_sounding_procedure_enable(false);
             break;
     }
 }

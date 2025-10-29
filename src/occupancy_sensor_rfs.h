@@ -9,6 +9,8 @@
 #include "occupancy_sensor_base.h"
 #include <zephyr/kernel.h>
 
+using namespace chip;
+
 /**
  * @brief RFS Operating modes
  */
@@ -53,22 +55,6 @@ public:
      * @return chip::EndpointId The endpoint ID based on connected device
      */
     chip::EndpointId GetEndpointId() const override;
-
-    /**
-     * @brief Start RF sensing monitoring
-     * 
-     * Begins periodic monitoring of Channel Sounding distance values
-     * 
-     * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
-     */
-    CHIP_ERROR StartRFSensing();
-
-    /**
-     * @brief Stop RF sensing monitoring
-     * 
-     * Stops periodic monitoring of Channel Sounding distance values
-     */
-    void StopRFSensing();
 
     /**
      * @brief Get current RFS operating mode
@@ -116,30 +102,7 @@ private:
     OccupancySensorRFS(const OccupancySensorRFS&) = delete;
     OccupancySensorRFS& operator=(const OccupancySensorRFS&) = delete;
 
-    /**
-     * @brief Work handler for RF sensing monitoring
-     * 
-     * Periodically checks Channel Sounding distance values and updates occupancy state
-     */
-    static void RfsWorkHandler(k_work *work);
-
-
-    /**
-     * @brief Check distance values and determine occupancy
-     * 
-     * Gets distance values from Channel Sounding and determines if space is occupied
-     * 
-     * @return true if distance indicates occupancy, false otherwise
-     */
-    bool CheckRFSensing();
-
-    /**
-     * @brief Reset device detection cache
-     * 
-     * Forces re-detection of the connected device on next call to DetectConnectedDevice()
-     * Useful when device reconnects or changes
-     */
-    void ResetDeviceCache() { mConnectedDevice = 0; }
+    static void RfsEventHandler(struct bt_conn *conn, float distance);
 
     /**
      * @brief Update LED1 based on current RFS mode
@@ -171,7 +134,6 @@ private:
     }; // Device 2 MAC from Kconfig
     
     // Configuration constants
-    //static constexpr chip::EndpointId kInvalidEndpointId = 0; // Invalid endpoint ID
     static constexpr chip::EndpointId kDevice1EndpointId = 2;  // Endpoint for device 1
     static constexpr chip::EndpointId kDevice2EndpointId = 3;  // Endpoint for device 2
     static constexpr float kOccupancyThreshold = CONFIG_RFS_OCCUPANCY_THRESHOLD; // threshold indicates occupancy
@@ -179,12 +141,10 @@ private:
     static constexpr uint32_t kRFSensingHoldTimeLowPower = 9 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
     
     // Zephyr resources
-    struct k_work_delayable mRfsWork;
     struct k_timer mModeIndicatorTimer;  // Timer for LED blinking in low power mode
     
     // State tracking
-    bool mRfSensingActive = false;
-    mutable chip::EndpointId mConnectedDevice = 0; // Cache for connected device (1, 2, or 0 for unknown)
+    mutable chip::EndpointId mConnectedDevice = kInvalidEndpointId; // Cache for connected device
     rfs_mode_t mCurrentMode = RFS_MODE_NORMAL;  // Current RFS operating mode
     bool mLedBlinkState = false;  // LED blink state for low power mode
     uint32_t kRfSensingOperationIntervalMs; // next operation interval based on mode

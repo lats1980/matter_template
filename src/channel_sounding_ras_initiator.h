@@ -22,15 +22,19 @@ enum channel_sounding_state {
     CS_STATE_STARTED
 };
 
+typedef void (*channel_sounding_event_handler_t)(struct bt_conn *conn, float distance);
+
 /**
  * @brief Initialize the Channel Sounding RAS Initiator module
  * 
  * This function initializes the Channel Sounding functionality and starts
  * the dedicated thread that manages the Channel Sounding operations.
  * 
+ * @param event_handler Callback function to handle Channel Sounding events
+ * 
  * @return 0 on success, negative error code on failure
  */
-int channel_sounding_init(void);
+int channel_sounding_init(channel_sounding_event_handler_t event_handler);
 
 /**
  * @brief Get the current Channel Sounding state
@@ -38,17 +42,6 @@ int channel_sounding_init(void);
  * @return channel_sounding_state enum value representing the current state
  */
 enum channel_sounding_state get_channel_sounding_state(void);
-
-/**
- * @brief Set the Channel Sounding state (for internal use)
- * 
- * This function sets the current state of the Channel Sounding module.
- * It is intended for internal use within the module only.
- * 
- * @param new_state The new state to set
- * @return true if state was changed, false if it was not permitted
- */
-bool set_channel_sounding_state(enum channel_sounding_state new_state);
 
 /**
  * @brief Enable or disable Channel Sounding procedures
@@ -62,15 +55,15 @@ bool set_channel_sounding_state(enum channel_sounding_state new_state);
 int channel_sounding_procedure_enable(bool enable);
 
 /**
- * @brief Get the latest distance estimate from Channel Sounding
+ * @brief Set the inactive interval between Channel Sounding procedures
  * 
- * This function retrieves the most recent distance estimate from
- * the antenna path. Used by RF sensing occupancy detection.
+ * This function sets the time interval (in milliseconds) between
+ * consecutive Channel Sounding procedures when they are enabled.
  * 
- * @param distance Pointer to store the distance value
- * @return true if valid distance is available, false otherwise
+ * @param interval_ms Inactive interval in milliseconds
+ * @return 0 on success, negative error code on failure
  */
-bool channel_sounding_get_distance(float *distance);
+int channel_sounding_set_inactive_interval(uint32_t interval_ms);
 
 /**
  * @brief Get the remote connected device's Bluetooth address
