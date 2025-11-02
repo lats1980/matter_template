@@ -58,7 +58,7 @@ config RFS_ACTIVATED_BY_PIR
 
 config RFS_SENSING_ACTIVE_INTERVAL_MS
 	int "RF Sensing active interval"
-	default 7000
+	default 4000
 	range 1000 60000
 	help
 	  Time interval (in milliseconds) for which RF Sensing remains active
@@ -85,7 +85,7 @@ config RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS
 
 config RFS_FILTER_RSSI_THRESHOLD
 	int "RF Sensing filter RSSI threshold"
-	default -85
+	default -80
 	range -127 -70
 	help
 	  RSSI threshold (in dBm) for filtering out weak RF signals.

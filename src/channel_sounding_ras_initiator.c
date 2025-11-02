@@ -413,8 +413,6 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	connection = bt_conn_ref(conn);
-	
 	/* Store the remote device address for device identification */
 	const bt_addr_le_t *remote_addr = bt_conn_get_dst(conn);
 	if (remote_addr) {
@@ -546,6 +544,7 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 			      struct bt_scan_filter_match *filter_match, bool connectable)
 {
 	char addr[BT_ADDR_LE_STR_LEN];
+	int err;
 
 	if (!device_info) {
 		LOG_ERR("No device info");
@@ -568,6 +567,22 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 	bt_addr_le_to_str(device_info->recv_info->addr, addr, sizeof(addr));
 	LOG_INF("Filters matched. Address: %s connectable: %d", addr, connectable);
 	bt_scan_stop();
+
+	struct bt_conn *conn = NULL;
+	err = bt_conn_le_create(device_info->recv_info->addr,
+				BT_CONN_LE_CREATE_CONN,
+				device_info->conn_param, &conn);
+	if (err) {
+		LOG_ERR("Create conn failed (err %d)", err);
+		err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
+		if (err) {
+			LOG_ERR("Failed to restart scanning (err %i)", err);
+		}
+	} else {
+		LOG_INF("Connection pending...");
+		connection = bt_conn_ref(conn);
+		bt_conn_unref(conn);
+	}
 }
 
 static void scan_connecting_error(struct bt_scan_device_info *device_info)
@@ -716,7 +731,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 	}
 
 	struct bt_scan_init_param param = {
-		.scan_param = NULL, .conn_param = BT_LE_CONN_PARAM_DEFAULT, .connect_if_match = 1};
+		.scan_param = NULL, .conn_param = BT_LE_CONN_PARAM_DEFAULT, .connect_if_match = 0};
 
 	bt_scan_init(&param);
 	bt_scan_cb_register(&scan_cb);
