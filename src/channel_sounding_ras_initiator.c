@@ -236,6 +236,7 @@ static void ranging_data_cb(struct bt_conn *conn, uint16_t ranging_counter, int 
 				store_distance_estimates(&cs_de_report);
 			}
 		}
+		k_sem_give(&sem_cs_control);
 	}
 }
 
@@ -731,7 +732,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 	}
 
 	struct bt_scan_init_param param = {
-		.scan_param = NULL, .conn_param = BT_LE_CONN_PARAM_DEFAULT, .connect_if_match = 0};
+		.scan_param = NULL, .conn_param = BT_LE_CONN_PARAM(0x10, 0x10, 0, BT_GAP_MS_TO_CONN_TIMEOUT(4000)), .connect_if_match = 0};
 
 	bt_scan_init(&param);
 	bt_scan_cb_register(&scan_cb);
@@ -865,7 +866,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			.role = BT_CONN_LE_CS_ROLE_INITIATOR,
 			.rtt_type = BT_CONN_LE_CS_RTT_TYPE_AA_ONLY,
 			.cs_sync_phy = BT_CONN_LE_CS_SYNC_1M_PHY,
-			.channel_map_repetition = 3,
+			.channel_map_repetition = 1,
 			.channel_selection_type = BT_CONN_LE_CS_CHSEL_TYPE_3B,
 			.ch3c_shape = BT_CONN_LE_CS_CH3C_SHAPE_HAT,
 			.ch3c_jump = 2,
@@ -892,8 +893,8 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			.min_procedure_interval = realtime_rd ? 5 : 10,
 			.max_procedure_interval = realtime_rd ? 5 : 10,
 			.max_procedure_count = 0,
-			.min_subevent_len = 60000,
-			.max_subevent_len = 60000,
+			.min_subevent_len = 16000,
+			.max_subevent_len = 16000,
 			.tone_antenna_config_selection = BT_LE_CS_TONE_ANTENNA_CONFIGURATION_A1_B1,
 			.phy = BT_LE_CS_PROCEDURE_PHY_2M,
 			.tx_power_delta = 0x80,
@@ -925,6 +926,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			      K_MSEC(CONFIG_RFS_SENSING_ACTIVE_INTERVAL_MS));
 		// wait for stop request
 		k_sem_take(&sem_cs_control, K_FOREVER);
+		k_work_cancel_delayable(&channel_sounding_work);
 		float distance;
 
 		err = channel_sounding_get_distance(&distance);
