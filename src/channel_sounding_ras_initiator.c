@@ -59,11 +59,12 @@ static const uint8_t known_device2_mac[6] = {
 #define CHANNEL_SOUNDING_THREAD_STACK_SIZE 4096
 #define CHANNEL_SOUNDING_THREAD_PRIORITY   5
 #define CHANNEL_SOUNDING_SCAN_TIMEOUT_MS   2000
+#define CHANNEL_SOUNDING_OP_TIMEOUT_MS     2000
 
-#define WAIT_AND_CHECK_CS_RESULT(cs_op_result)           \
+#define WAIT_AND_CHECK_CS_RESULT(timeout)           \
     do {                                                 \
         (cs_op_result) = -EINPROGRESS;                   \
-        k_sem_take(&sem_cs_control, K_FOREVER);          \
+        k_sem_take(&sem_cs_control, K_MSEC(timeout));       \
         if (cs_op_result) {                              \
             LOG_ERR("Channel sounding thread last operation failed: err %d", \
                     cs_op_result);                       \
@@ -83,7 +84,7 @@ static K_MUTEX_DEFINE(distance_estimate_buffer_mutex);
 static K_MUTEX_DEFINE(cs_procedure_mutex);
 
 static struct bt_conn *connection;
-static struct bt_conn *auth_conn;
+
 NET_BUF_SIMPLE_DEFINE_STATIC(latest_local_steps, LOCAL_PROCEDURE_MEM);
 NET_BUF_SIMPLE_DEFINE_STATIC(latest_peer_steps, BT_RAS_PROCEDURE_MEM);
 static int32_t most_recent_local_ranging_counter = PROCEDURE_COUNTER_NONE;
@@ -103,7 +104,6 @@ static bt_addr_le_t remote_addr_filter;
 static enum channel_sounding_state cs_state = CS_STATE_UNINITIALIZED;
 
 static channel_sounding_event_handler_t event_handler_cb;
-struct k_work_delayable channel_sounding_work;
 
 static bool set_channel_sounding_state(enum channel_sounding_state new_state);
 static int channel_sounding_get_distance(float *distance);
@@ -351,27 +351,25 @@ static void discovery_completed_cb(struct bt_gatt_dm *dm, void *context)
 	if (err) {
 		LOG_ERR("RAS RREQ alloc init failed (err %d)", err);
 		cs_op_result = err;
-		k_sem_give(&sem_cs_control);
-		return;
 	}
 
 	err = bt_gatt_dm_data_release(dm);
 	if (err) {
 		LOG_ERR("Could not release the discovery data (err %d)", err);
-		cs_op_result = err;
 	}
-	cs_op_result = 0;
 	k_sem_give(&sem_cs_control);
 }
 
 static void discovery_service_not_found_cb(struct bt_conn *conn, void *context)
 {
 	LOG_INF("The service could not be found during the discovery, disconnecting");
+	k_sem_give(&sem_cs_control);
 }
 
 static void discovery_error_found_cb(struct bt_conn *conn, int err, void *context)
 {
 	LOG_INF("The discovery procedure failed (err %d)", err);
+	k_sem_give(&sem_cs_control);
 }
 
 static struct bt_gatt_dm_cb discovery_cb = {
@@ -433,8 +431,6 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 	} else {
 		LOG_ERR("Failed to get remote device address");
 	}
-
-	k_work_cancel_delayable(&channel_sounding_work);
 	k_sem_give(&sem_cs_control);
 }
 
@@ -449,11 +445,6 @@ static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 	LOG_INF("Disconnected (reason 0x%02X)", reason);
-
-	if (auth_conn) {
-		bt_conn_unref(auth_conn);
-		auth_conn = NULL;
-	}
 
 	bt_conn_unref(conn);
 	connection = NULL;
@@ -766,18 +757,18 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		}
 		set_channel_sounding_state(CS_STATE_STOPPED);
 		if (cs_procedure_running) {
-			k_work_schedule(&channel_sounding_work, K_MSEC(cs_inactive_interval));
+			k_sem_take(&sem_cs_control, K_MSEC(cs_inactive_interval));
+		} else {
+			k_sem_take(&sem_cs_control, K_FOREVER);
 		}
-		k_sem_take(&sem_cs_control, K_FOREVER);
 		set_channel_sounding_state(CS_STATE_CONNECTING);
 		err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
 		if (err) {
 			LOG_ERR("Scanning failed to start (err %i)", err);
 			continue;
 		}
-		k_work_schedule(&channel_sounding_work, K_MSEC(CHANNEL_SOUNDING_SCAN_TIMEOUT_MS));
 		// wait for connection
-		k_sem_take(&sem_cs_control, K_FOREVER);
+		k_sem_take(&sem_cs_control, K_MSEC(CHANNEL_SOUNDING_SCAN_TIMEOUT_MS));
 		if (!connection) {
 			LOG_ERR("No connected device");
 			continue;
@@ -787,29 +778,36 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to encrypt connection (err %d)", err);
 			continue;
 		}
-		cs_op_result = -EINPROGRESS;
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		// wait and check security result
-		if (cs_op_result) {
-			LOG_ERR("Failed to secure connection: err %d", cs_op_result);
+		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
+		if (!connection) {
+			LOG_ERR("No connected device");
 			continue;
 		}
-
 		static struct bt_gatt_exchange_params mtu_exchange_params = {.func = mtu_exchange_cb};
 		err = bt_gatt_exchange_mtu(connection, &mtu_exchange_params);
 		if (err) {
 			LOG_ERR("MTU exchange failed (err %d)", err);
 			continue;
 		}
-		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
-
+		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
+		if (!connection) {
+			LOG_ERR("No connected device");
+			continue;
+		}
 		err = bt_gatt_dm_start(connection, BT_UUID_RANGING_SERVICE, &discovery_cb, NULL);
 		if (err) {
 			LOG_ERR("Discovery failed (err %d)", err);
 			continue;
 		}
-		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
-
+        k_sem_take(&sem_cs_control, K_FOREVER);
+        if (cs_op_result) {
+            LOG_ERR("Discovery fail");
+            continue;
+        } 
+		if (!connection) {
+			LOG_ERR("No connected device");
+			continue;
+		}
 		const struct bt_le_cs_set_default_settings_param default_settings = {
 			.enable_initiator_role = true,
 			.enable_reflector_role = false,
@@ -826,7 +824,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Could not get RAS features from peer (err %d)", err);
 			continue;
 		}
-		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
+		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
 
 		const bool realtime_rd = ras_feature_bits & RAS_FEAT_REALTIME_RD;
 		if (realtime_rd) {
@@ -865,7 +863,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to exchange CS capabilities (err %d)", err);
 			continue;
 		}
-		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
+		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
 
 		struct bt_le_cs_create_config_params config_params = {
 			.id = CS_CONFIG_ID,
@@ -890,14 +888,14 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to create CS config (err %d)", err);
 			continue;
 		}
-		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
+		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
 
 		err = bt_le_cs_security_enable(connection);
 		if (err) {
 			LOG_ERR("Failed to start CS Security (err %d)", err);
 			return;
 		}
-		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
+		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
 
 		const struct bt_le_cs_set_procedure_parameters_param procedure_params = {
 			.config_id = CS_CONFIG_ID,
@@ -931,14 +929,10 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("Failed to enable CS procedures (err %d)", err);
 			continue;
 		}
-		WAIT_AND_CHECK_CS_RESULT(cs_op_result);
+		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
 		set_channel_sounding_state(CS_STATE_STARTED);
 		LOG_INF("Channel Sounding started successfully");
-		k_work_reschedule(&channel_sounding_work,
-			      K_MSEC(CONFIG_RFS_SENSING_ACTIVE_INTERVAL_MS));
-		// wait for stop request
-		k_sem_take(&sem_cs_control, K_FOREVER);
-		k_work_cancel_delayable(&channel_sounding_work);
+		k_sem_take(&sem_cs_control, K_MSEC(CONFIG_RFS_SENSING_ACTIVE_INTERVAL_MS));
 		float distance;
 
 		err = channel_sounding_get_distance(&distance);
@@ -946,13 +940,6 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			event_handler_cb(connection, distance);
 		}
 	}
-}
-
-void channel_sounding_work_handler(struct k_work *work)
-{
-	ARG_UNUSED(work);
-
-	k_sem_give(&sem_cs_control);
 }
 
 int channel_sounding_init(channel_sounding_event_handler_t event_handler)
@@ -965,7 +952,6 @@ int channel_sounding_init(channel_sounding_event_handler_t event_handler)
 	LOG_INF("Initializing Channel Sounding");
 
 	event_handler_cb = event_handler;
-	k_work_init_delayable(&channel_sounding_work, channel_sounding_work_handler);
 
 	/* Create the Channel Sounding thread */
 	channel_sounding_thread_id = k_thread_create(&channel_sounding_thread_data,
@@ -1046,9 +1032,6 @@ int channel_sounding_procedure_enable(bool enable)
 	/* Notify the Channel Sounding thread to start/stop procedures */
 	if (cs_procedure_running) {
 		LOG_INF("Stopping Channel Sounding procedures");
-		if (get_channel_sounding_state() == CS_STATE_STOPPED) {
-			k_work_cancel_delayable(&channel_sounding_work);
-		}
 	} else {
 		LOG_INF("Starting Channel Sounding procedures");
 		k_sem_give(&sem_cs_control);
@@ -1110,9 +1093,6 @@ int channel_sounding_set_inactive_interval(uint32_t interval_ms)
 	}
 	cs_inactive_interval = interval_ms;
 	LOG_INF("Channel Sounding inactive interval set to %u ms", cs_inactive_interval);
-	if (get_channel_sounding_state() == CS_STATE_STOPPED && cs_procedure_running) {
-		k_work_reschedule(&channel_sounding_work, K_MSEC(cs_inactive_interval));
-	}
 	return 0;
 }
 
