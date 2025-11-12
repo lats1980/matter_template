@@ -40,7 +40,7 @@ void OccupancySensorRFS::RfsEventHandler(struct bt_conn *conn, float distance)
     	/* Store the remote device address for device identification */
 	    const bt_addr_le_t *remote_addr = bt_conn_get_dst(conn);
         if (remote_addr) {
-            LOG_INF("Confirmed connection to known RF sensing device");
+            LOG_DBG("Confirmed connection to known RF sensing device");
             if(channel_sounding_set_filter_by_addr(remote_addr) != 0) {
                 LOG_ERR("Failed to set Channel Sounding address filter");
                 return;
@@ -101,10 +101,10 @@ chip::EndpointId OccupancySensorRFS::GetEndpointId() const
     if (remote_address_valid) {
         // Compare with known device MAC addresses
         if (memcmp(remote_device_addr, kDeviceMac1, 6) == 0) {
-            LOG_INF("Detected Device 1 - using endpoint 2");
+            LOG_DBG("Detected Device 1 - using endpoint 2");
             mConnectedDevice = kDevice1EndpointId;
         } else if (memcmp(remote_device_addr, kDeviceMac2, 6) == 0) {
-            LOG_INF("Detected Device 2 - using endpoint 3");
+            LOG_DBG("Detected Device 2 - using endpoint 3");
             mConnectedDevice = kDevice2EndpointId;
         } else {
             // Log the actual remote MAC address for debugging

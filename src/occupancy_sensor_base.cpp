@@ -45,10 +45,10 @@ CHIP_ERROR OccupancySensorBase::SetOccupancyState(bool occupied)
             CHIP_ERROR err = chip::DeviceLayer::SystemLayer().StartTimer(
                 chip::System::Clock::Seconds16(*holdTime), OccupancySensorBase::OccupancyPresentTimerHandler,
                 reinterpret_cast<void *>(static_cast<uintptr_t>(endpointId)));
-            LOG_INF("Start HoldTime timer");
+            LOG_DBG("Start HoldTime timer");
             if (CHIP_NO_ERROR != err)
             {
-                LOG_INF("Failed to start HoldTime timer.");
+                LOG_ERR("Failed to start HoldTime timer.");
             }
         }
     }

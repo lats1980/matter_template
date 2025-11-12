@@ -204,7 +204,7 @@ static void ranging_data_cb(struct bt_conn *conn, uint16_t ranging_counter, int 
 	}
 
 	if (ranging_counter != most_recent_local_ranging_counter) {
-		LOG_INF("Ranging data dropped as peer ranging counter doesn't match local ranging "
+		LOG_DBG("Ranging data dropped as peer ranging counter doesn't match local ranging "
 			"data counter. (peer: %u, local: %u)",
 			ranging_counter, most_recent_local_ranging_counter);
 		net_buf_simple_reset(&latest_local_steps);
@@ -264,7 +264,7 @@ static void subevent_result_cb(struct bt_conn *conn, struct bt_conn_le_cs_subeve
 
 		if (sem_state < 0) {
 			dropped_ranging_counter = result->header.procedure_counter;
-			LOG_INF("Dropped subevent results. Waiting for ranging data from peer.");
+			LOG_DBG("Dropped subevent results. Waiting for ranging data from peer.");
 			return;
 		}
 
@@ -321,7 +321,7 @@ static void ranging_data_ready_cb(struct bt_conn *conn, uint16_t ranging_counter
 
 static void ranging_data_overwritten_cb(struct bt_conn *conn, uint16_t ranging_counter)
 {
-	LOG_INF("Ranging data overwritten %i", ranging_counter);
+	LOG_DBG("Ranging data overwritten %i", ranging_counter);
 }
 
 static void mtu_exchange_cb(struct bt_conn *conn, uint8_t err,
@@ -505,7 +505,7 @@ static void procedure_enable_cb(struct bt_conn *conn,
 
 	if (status == BT_HCI_ERR_SUCCESS) {
 		if (params->state == 1) {
-			LOG_INF("CS procedures enabled:\n"
+			LOG_DBG("CS procedures enabled:\n"
 				" - config ID: %u\n"
 				" - antenna configuration index: %u\n"
 				" - TX power: %d dbm\n"
@@ -522,7 +522,7 @@ static void procedure_enable_cb(struct bt_conn *conn,
 				params->event_interval, params->procedure_interval,
 				params->procedure_count, params->max_procedure_len);
 		} else {
-			LOG_INF("CS procedures disabled.");
+			LOG_DBG("CS procedures disabled.");
 		}
 		cs_op_result = 0;
 	} else {
@@ -583,7 +583,6 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 			LOG_ERR("Failed to restart scanning (err %i)", err);
 		}
 	} else {
-		LOG_INF("Connection pending...");
 		connection = bt_conn_ref(conn);
 		bt_conn_unref(conn);
 	}
@@ -593,8 +592,7 @@ static void scan_connecting_error(struct bt_scan_device_info *device_info)
 {
 	int err;
 
-	LOG_INF("Connecting failed, restarting scanning");
-
+	LOG_ERR("Connecting failed, restarting scanning");
 	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
 	if (err) {
 		LOG_ERR("Failed to restart scanning (err %i)", err);
@@ -604,7 +602,7 @@ static void scan_connecting_error(struct bt_scan_device_info *device_info)
 
 static void scan_connecting(struct bt_scan_device_info *device_info, struct bt_conn *conn)
 {
-	LOG_INF("Connecting");
+	LOG_DBG("Connecting");
 }
 
 BT_SCAN_CB_INIT(scan_cb, scan_filter_match, NULL, scan_connecting_error, scan_connecting);
@@ -1031,9 +1029,9 @@ int channel_sounding_procedure_enable(bool enable)
 	}
 	/* Notify the Channel Sounding thread to start/stop procedures */
 	if (cs_procedure_running) {
-		LOG_INF("Stopping Channel Sounding procedures");
+		LOG_DBG("Stopping Channel Sounding procedures");
 	} else {
-		LOG_INF("Starting Channel Sounding procedures");
+		LOG_DBG("Starting Channel Sounding procedures");
 		k_sem_give(&sem_cs_control);
 	}
 	cs_procedure_running = enable;
@@ -1061,7 +1059,7 @@ static int channel_sounding_get_distance(float *distance)
 
 	/* Get distance estimates for antenna path 0 (first antenna) */
 	cs_de_dist_estimates_t distance_on_ap = get_distance(0);
-	LOG_DBG("Distance estimate: ifft: %f, "
+	LOG_INF("Distance estimate: ifft: %f, "
 		"phase_slope: %f, rtt: %f",
 		(double)distance_on_ap.ifft,
 		(double)distance_on_ap.phase_slope,
@@ -1080,7 +1078,7 @@ static int channel_sounding_get_distance(float *distance)
 		return -EINVAL;
 	}
 
-	LOG_DBG("Retrieved distance: %.2f", (double)*distance);
+	LOG_INF("Retrieved distance: %.2f", (double)*distance);
 
 	return 0;
 }
@@ -1103,7 +1101,7 @@ int channel_sounding_set_filter_by_addr(const bt_addr_le_t *addr)
 		return -EINVAL;
 	}
 	memcpy(&remote_addr_filter, addr, sizeof(bt_addr_le_t));
-	LOG_INF("Channel Sounding remote address filter set");
+	LOG_DBG("Channel Sounding remote address filter set");
 
 	return 0;
 }
