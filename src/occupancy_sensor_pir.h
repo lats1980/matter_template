@@ -41,7 +41,7 @@ public:
      * 
      * @return chip::EndpointId The endpoint ID
      */
-    chip::EndpointId GetEndpointId() const override { return kOccupancySensorEndpointId; }
+    chip::EndpointId GetEndpointId() const override { return kPirEndpoint; }
 
 private:
     OccupancySensorPIR() = default;
@@ -67,7 +67,7 @@ private:
 
 
     // Configuration constants
-    static constexpr chip::EndpointId kOccupancySensorEndpointId = 1;
+    static constexpr chip::EndpointId kPirEndpoint = 1 + CONFIG_BT_MAX_PAIRED;
 #if defined(CONFIG_SIMULATED_PIR_SENSOR)
     static constexpr uint8_t kPirPin = 4; // P0.04 (simulated with button)
 #else

@@ -77,11 +77,13 @@ CHIP_ERROR AppTask::Init()
 	ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(Nrf::Board::DefaultMatterEventHandler, 0));
 	ReturnErrorOnFailure(Nrf::Matter::RegisterEventHandler(MatterEventHandler, 0));
 
-	/* Initialize PIR occupancy sensor */
-	ReturnErrorOnFailure(OccupancySensorPIR::Instance().Init());
-
 	/* Initialize RF Sensing occupancy sensor */
 	ReturnErrorOnFailure(OccupancySensorRFS::Instance().Init());
+
+#if defined(CONFIG_PIR_SUPPORT)
+	/* Initialize PIR occupancy sensor */
+	ReturnErrorOnFailure(OccupancySensorPIR::Instance().Init());
+#endif
 
 	return Nrf::Matter::StartServer();
 }

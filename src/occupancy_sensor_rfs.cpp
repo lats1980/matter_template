@@ -13,6 +13,7 @@
 
 #include <app/server/Server.h>
 #include <app/util/attribute-storage.h>
+#include <app/util/endpoint-config-api.h>
 #include <app/clusters/occupancy-sensor-server/occupancy-sensor-server.h>
 #include <app/EventLogging.h>
 #include <app-common/zap-generated/attributes/Accessors.h>
@@ -40,7 +41,8 @@ void OccupancySensorRFS::RfsEventHandler(uint8_t bond_idx, float distance)
         if (bond_idx >=0 && bond_idx < CONFIG_BT_MAX_PAIRED) {
             LOG_DBG("Confirmed connection to known RF sensing device");
             OccupancySensorRFS::Instance().remote_address_valid = true;
-            OccupancySensorRFS::Instance().mConnectedDevice = bond_idx + 2; // Endpoint 2 for bond 0, endpoint 3 for bond 1
+            // Map bond index to endpoint ID, skip endpoint 0 (root endpoint)
+            OccupancySensorRFS::Instance().mConnectedDevice = bond_idx + 1;
         } else {
             OccupancySensorRFS::Instance().remote_address_valid = false;
             LOG_ERR("Failed to get remote device address");
@@ -137,14 +139,11 @@ void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
     switch (mode) {
         case RFS_MODE_NORMAL:
             Nrf::PostTask([sensor] {
-                CHIP_ERROR err;
-                err = SetHoldTime(2, kRFSensingHoldTimeNormal);
-                if (err != CHIP_NO_ERROR) {
-                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
-                }
-                err = SetHoldTime(3, kRFSensingHoldTimeNormal);
-                if (err != CHIP_NO_ERROR) {
-                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                for (chip::EndpointId endpoint = kRfsFirstEndpoint; endpoint <= kRfsLastEndpoint; endpoint++) {
+                    CHIP_ERROR err = SetHoldTime(endpoint, kRFSensingHoldTimeNormal);
+                    if (err != CHIP_NO_ERROR) {
+                        LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                    }
                 }
             });
             channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS);
@@ -152,14 +151,11 @@ void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
             break;
         case RFS_MODE_LOW_POWER:
             Nrf::PostTask([sensor] {
-                CHIP_ERROR err;
-                err = SetHoldTime(2, kRFSensingHoldTimeLowPower);
-                if (err != CHIP_NO_ERROR) {
-                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
-                }
-                err = SetHoldTime(3, kRFSensingHoldTimeLowPower);
-                if (err != CHIP_NO_ERROR) {
-                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                for (chip::EndpointId endpoint = kRfsFirstEndpoint; endpoint <= kRfsLastEndpoint; endpoint++) {
+                    CHIP_ERROR err = SetHoldTime(endpoint, kRFSensingHoldTimeLowPower);
+                    if (err != CHIP_NO_ERROR) {
+                        LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                    }
                 }
             });
             channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS);

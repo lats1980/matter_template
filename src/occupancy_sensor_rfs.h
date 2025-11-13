@@ -108,6 +108,8 @@ private:
     static constexpr float kOccupancyThreshold = CONFIG_RFS_OCCUPANCY_THRESHOLD; // threshold indicates occupancy
     static constexpr uint32_t kRFSensingHoldTimeNormal = 3 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
     static constexpr uint32_t kRFSensingHoldTimeLowPower = 9 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
+    static constexpr chip::EndpointId kRfsFirstEndpoint = 1;
+    static constexpr chip::EndpointId kRfsLastEndpoint = kRfsFirstEndpoint + CONFIG_BT_MAX_PAIRED - 1;
     
     // Zephyr resources
     struct k_timer mModeIndicatorTimer;  // Timer for LED blinking in low power mode

@@ -86,7 +86,7 @@ CHIP_ERROR OccupancySensorPIR::Init()
     }
 
     mInitialized = true;
-    LOG_INF("PIR occupancy sensor initialized successfully on Endpoint %d", kOccupancySensorEndpointId);
+    LOG_INF("PIR occupancy sensor initialized successfully on Endpoint %d", kPirEndpoint);
 
     return CHIP_NO_ERROR;
 }

@@ -5,8 +5,15 @@
 #
 mainmenu "Matter nRF Connect Template Example Application"
 
+config PIR_SUPPORT
+	bool "PIR sensor support"
+	help
+	  Enable this option to include Passive Infrared (PIR) sensor support
+	  for occupancy detection.
+
 config SIMULATED_PIR_SENSOR
 	bool "Simulated PIR sensor with button"
+	depends on PIR_SUPPORT
 	help
 	  Enable this option to simulate PIR sensor input using a button.
 
@@ -19,7 +26,7 @@ config HOLD_TIME_LIMIT_MIN_SEC
 	  after motion is detected.
 
 config HOLD_TIME_LIMIT_MAX_SEC
-	int "PIR sensor hold time limit (max)"
+	int "Occupancy sensor hold time limit (max)"
 	default 600
 	range 1 600
 	help
@@ -27,7 +34,7 @@ config HOLD_TIME_LIMIT_MAX_SEC
 	  after motion is detected.
 
 config HOLD_TIME_LIMIT_DEFAULT_SEC
-	int "PIR sensor hold time limit (default)"
+	int "Occupancy sensor hold time limit (default)"
 	default 10
 	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
 	help
@@ -36,6 +43,7 @@ config HOLD_TIME_LIMIT_DEFAULT_SEC
 
 config RFS_ACTIVATED_BY_PIR
 	bool "RF Sensing activated by PIR sensor"
+	depends on PIR_SUPPORT
 	help
 	  Enable this option to activate RF Sensing only when the PIR sensor
 	  detects motion.
@@ -55,8 +63,7 @@ config RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS
 	range 1000 60000
 	help
 	  Time interval (in milliseconds) in normal mode for which RF Sensing
-	  remains inactive (if RFS_ACTIVATED_BY_PIR is enabled, this interval
-	  starts after the active interval ends).
+	  remains inactive.
 
 config RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS
 	int "RF Sensing inactive interval in low power mode"
@@ -64,8 +71,7 @@ config RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS
 	range 1000 60000
 	help
 	  Time interval (in milliseconds) in low power mode for which RF Sensing
-	  remains inactive (if RFS_ACTIVATED_BY_PIR is enabled, this interval
-	  starts after the active interval ends).
+	  remains inactive.
 
 config RFS_FILTER_RSSI_THRESHOLD
 	int "RF Sensing filter RSSI threshold"

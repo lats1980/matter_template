@@ -39,5 +39,11 @@ target_sources(app PRIVATE
     src/channel_sounding_ras_initiator.c
 )
 
+target_sources_ifdef(CONFIG_PIR_SUPPORT
+	app
+	PRIVATE
+	src/occupancy_sensor_pir.cpp
+)
+
 ncs_configure_data_model()
 # NORDIC SDK APP END
