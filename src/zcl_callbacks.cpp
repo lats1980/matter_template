@@ -66,7 +66,7 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 				// if PIR is not occupied but RFS is occupied, do nothing
 			}
 #endif // CONFIG_RFS_ACTIVATED_BY_PIR
-		} else if (OccupancySensorRFS::Instance().IsValidEndpointId(endpointId)) {
+		} else if (endpointId == OccupancySensorRFS::Instance().GetEndpointId()) {
 			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED4).Set(*value);
 #if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
 			if (!(occupancy & (uint8_t)OccupancySensing::OccupancyBitmap::kOccupied)) {

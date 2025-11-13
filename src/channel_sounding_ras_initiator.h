@@ -22,7 +22,7 @@ enum channel_sounding_state {
     CS_STATE_STARTED
 };
 
-typedef void (*channel_sounding_event_handler_t)(struct bt_conn *conn, float distance);
+typedef void (*channel_sounding_event_handler_t)(uint8_t index, float distance);
 
 /**
  * @brief Initialize the Channel Sounding RAS Initiator module
@@ -64,17 +64,6 @@ int channel_sounding_procedure_enable(bool enable);
  * @return 0 on success, negative error code on failure
  */
 int channel_sounding_set_inactive_interval(uint32_t interval_ms);
-
-/**
- * @brief Set address filter for Channel Sounding procedures
- * 
- * This function configures the Channel Sounding to only interact with
- * the device having the specified Bluetooth LE address.
- * 
- * @param addr Pointer to the Bluetooth LE address to filter by
- * @return 0 on success, negative error code on failure
- */
-int channel_sounding_set_filter_by_addr(const bt_addr_le_t *addr);
 
 #ifdef __cplusplus
 }

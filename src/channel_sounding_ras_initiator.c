@@ -27,25 +27,6 @@
 
 LOG_MODULE_DECLARE(app, CONFIG_CHIP_APP_LOG_LEVEL);
 
-/* Known device MAC addresses from Kconfig */
-static const uint8_t known_device1_mac[6] = {
-    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 40) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 32) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 24) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 16) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 8) & 0xFF),
-    (uint8_t)(CONFIG_RFS_DEVICE1_MAC_ADDR & 0xFF)
-};
-
-static const uint8_t known_device2_mac[6] = {
-    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 40) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 32) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 24) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 16) & 0xFF),
-    (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 8) & 0xFF),
-    (uint8_t)(CONFIG_RFS_DEVICE2_MAC_ADDR & 0xFF)
-};
-
 #define CS_CONFIG_ID           0
 #define NUM_MODE_0_STEPS       3
 #define PROCEDURE_COUNTER_NONE (-1)
@@ -107,6 +88,9 @@ static channel_sounding_event_handler_t event_handler_cb;
 
 static bool set_channel_sounding_state(enum channel_sounding_state new_state);
 static int channel_sounding_get_distance(float *distance);
+
+static uint8_t bond_count;
+static uint8_t found_index;
 
 static void store_distance_estimates(cs_de_report_t *p_report)
 {
@@ -423,7 +407,7 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 	if (info.role == BT_CONN_ROLE_PERIPHERAL) {
 		return;
 	}
-
+#if 0
 	/* Store the remote device address for device identification */
 	const bt_addr_le_t *remote_addr = bt_conn_get_dst(conn);
 	if (remote_addr) {
@@ -431,6 +415,7 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 	} else {
 		LOG_ERR("Failed to get remote device address");
 	}
+#endif
 	k_sem_give(&sem_cs_control);
 }
 
@@ -578,7 +563,7 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 				device_info->conn_param, &conn);
 	if (err) {
 		LOG_ERR("Create conn failed (err %d)", err);
-		err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
+		err = bt_scan_start(BT_SCAN_TYPE_SCAN_ACTIVE);
 		if (err) {
 			LOG_ERR("Failed to restart scanning (err %i)", err);
 		}
@@ -593,7 +578,7 @@ static void scan_connecting_error(struct bt_scan_device_info *device_info)
 	int err;
 
 	LOG_ERR("Connecting failed, restarting scanning");
-	err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
+	err = bt_scan_start(BT_SCAN_TYPE_SCAN_ACTIVE);
 	if (err) {
 		LOG_ERR("Failed to restart scanning (err %i)", err);
 		return;
@@ -607,14 +592,45 @@ static void scan_connecting(struct bt_scan_device_info *device_info, struct bt_c
 
 BT_SCAN_CB_INIT(scan_cb, scan_filter_match, NULL, scan_connecting_error, scan_connecting);
 
+static void try_add_address_filter(const struct bt_bond_info *info, void *user_data)
+{
+	int err;
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(&info->addr, addr, sizeof(addr));
+
+	struct bt_conn *conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &info->addr);
+
+	if (conn) {
+		bt_conn_unref(conn);
+		return;
+	}
+
+	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_ADDR, &info->addr);
+	if (err) {
+		LOG_ERR("Address filter cannot be added (err %d): %s", err, addr);
+		return;
+	}
+
+	LOG_DBG("Address filter added: %s", addr);
+	bond_count++;
+}
+
 static int scan_init(void)
 {
 	int err;
-	bt_addr_le_t addr;
 	bt_addr_le_t zero_addr = {0};
+	uint8_t filter_mode = 0;
 
 	bt_scan_stop();
 	bt_scan_filter_remove_all();
+
+	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_UUID, BT_UUID_RANGING_SERVICE);
+	if (err) {
+		LOG_ERR("UUID filter cannot be added (err %d", err);
+		return err;
+	}
+	filter_mode |= BT_SCAN_UUID_FILTER;
 
 	if (memcmp(&remote_addr_filter, &zero_addr, sizeof(bt_addr_le_t)) != 0) {
 		/* Add specified device address to the filter */
@@ -624,27 +640,25 @@ static int scan_init(void)
 			return err;
 		}
 		memset(&remote_addr_filter, 0, sizeof(remote_addr_filter));
+		filter_mode = BT_SCAN_ADDR_FILTER;
 	} else {
 		LOG_INF("No remote address filter set, using known device addresses");
 		/* Add known device addresses to the filter */
-		addr.type = BT_ADDR_LE_RANDOM;
-		memcpy(&addr.a.val, known_device1_mac, 6);
-		err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_ADDR, &addr);
-		if (err) {
-			LOG_ERR("Scanning filters cannot be set (err %d)", err);
-			return err;
-		}
-
-		addr.type = BT_ADDR_LE_RANDOM;
-		memcpy(&addr.a.val, known_device2_mac, 6);
-		err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_ADDR, &addr);
-		if (err) {
-			LOG_ERR("Scanning filters cannot be set (err %d)", err);
-			return err;
+		bond_count = 0;
+		bt_foreach_bond(BT_ID_DEFAULT, try_add_address_filter, NULL);
+		LOG_INF("Total known device addresses added to filter: %d", bond_count);
+		if (bond_count > CONFIG_BT_MAX_PAIRED) {
+			LOG_WRN("");
+		} else if (bond_count == CONFIG_BT_MAX_PAIRED) {
+			filter_mode = BT_SCAN_ADDR_FILTER;
+		} else if (bond_count != 0) {
+			filter_mode |= BT_SCAN_ADDR_FILTER;
+		} else {
+			LOG_INF("No known device addresses found, scanning without address filter");
 		}
 	}
 
-	err = bt_scan_filter_enable(BT_SCAN_ADDR_FILTER, false);
+	err = bt_scan_filter_enable(filter_mode, false);
 	if (err) {
 		LOG_ERR("Filters cannot be turned on (err %d)", err);
 		return err;
@@ -710,6 +724,26 @@ BT_CONN_CB_DEFINE(conn_cb) = {
 	.le_cs_subevent_data_available = subevent_result_cb,
 };
 
+void bond_cb(const struct bt_bond_info *info, void *user_data) {
+	const bt_addr_le_t *target_addr = user_data;
+	if (bt_addr_le_cmp(&info->addr, target_addr) == 0) {
+		found_index = bond_count;
+	}
+	bond_count++;
+}
+
+static bool get_bond_index(const bt_addr_le_t *target_addr, uint8_t *out_index) {
+	bond_count = 0;
+	found_index = CONFIG_BT_MAX_PAIRED;
+	bt_foreach_bond(BT_ID_DEFAULT, bond_cb, (void *)target_addr);
+	if (found_index == CONFIG_BT_MAX_PAIRED) {
+		LOG_INF("No bond found for the given address");
+		return false;
+	}
+	*out_index = found_index;
+	return true;
+}
+
 static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -748,11 +782,6 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			bt_ras_rreq_free(connection);
 			bt_conn_disconnect(connection, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		}
-
-		err = scan_init();
-		if (err) {
-			LOG_ERR("Scan init failed (err %d)", err);
-		}
 		set_channel_sounding_state(CS_STATE_STOPPED);
 		if (cs_procedure_running) {
 			k_sem_take(&sem_cs_control, K_MSEC(cs_inactive_interval));
@@ -760,7 +789,11 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			k_sem_take(&sem_cs_control, K_FOREVER);
 		}
 		set_channel_sounding_state(CS_STATE_CONNECTING);
-		err = bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE);
+		err = scan_init();
+		if (err) {
+			LOG_ERR("Scan init failed (err %d)", err);
+		}
+		err = bt_scan_start(BT_SCAN_TYPE_SCAN_ACTIVE);
 		if (err) {
 			LOG_ERR("Scanning failed to start (err %i)", err);
 			continue;
@@ -935,7 +968,23 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 
 		err = channel_sounding_get_distance(&distance);
 		if (err == 0) {
-			event_handler_cb(connection, distance);
+			if (connection == NULL) {
+				LOG_ERR("No connected device");
+				continue;
+			}
+			// Store the remote device address for device identification
+			const bt_addr_le_t *target_addr = bt_conn_get_dst(connection);
+			if (!target_addr) {
+				LOG_ERR("Failed to get target address");
+				continue;
+			}
+			memcpy(&remote_addr_filter, target_addr, sizeof(bt_addr_le_t));
+			uint8_t bond_index;
+			if (!get_bond_index(target_addr, &bond_index)) {
+				LOG_ERR("No bond index found for the given address");
+				continue;
+			}
+			event_handler_cb(bond_index, distance);
 		}
 	}
 }
@@ -1091,17 +1140,5 @@ int channel_sounding_set_inactive_interval(uint32_t interval_ms)
 	}
 	cs_inactive_interval = interval_ms;
 	LOG_INF("Channel Sounding inactive interval set to %u ms", cs_inactive_interval);
-	return 0;
-}
-
-int channel_sounding_set_filter_by_addr(const bt_addr_le_t *addr)
-{
-	if (!addr) {
-		LOG_ERR("Invalid address pointer");
-		return -EINVAL;
-	}
-	memcpy(&remote_addr_filter, addr, sizeof(bt_addr_le_t));
-	LOG_DBG("Channel Sounding remote address filter set");
-
 	return 0;
 }

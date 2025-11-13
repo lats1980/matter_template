@@ -82,18 +82,6 @@ public:
      */
     void HandleButtonEvent(bool button_pressed);
 
-    /**
-     * @brief Check if an endpoint ID is valid for this sensor
-     * 
-     * @param endpoint The endpoint ID to check
-     * 
-     * @return true endpoint is valid, false if endpoint is not valid
-     */
-    bool IsValidEndpointId(chip::EndpointId endpoint) const
-    {
-        return (endpoint == kDevice1EndpointId) || (endpoint == kDevice2EndpointId);
-    }
-
 private:
     OccupancySensorRFS() = default;
     ~OccupancySensorRFS() = default;
@@ -102,7 +90,7 @@ private:
     OccupancySensorRFS(const OccupancySensorRFS&) = delete;
     OccupancySensorRFS& operator=(const OccupancySensorRFS&) = delete;
 
-    static void RfsEventHandler(struct bt_conn *conn, float distance);
+    static void RfsEventHandler(uint8_t bond_idx, float distance);
 
     /**
      * @brief Update LED1 based on current RFS mode
@@ -114,31 +102,9 @@ private:
      */
     static void ModeIndicatorTimerHandler(k_timer *timer);
 
-    uint8_t remote_device_addr[6];
     bool remote_address_valid = false;
-
-    // Device identification constants - configured via Kconfig
-    static constexpr uint8_t kDeviceMac1[6] = {
-        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 40) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 32) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 24) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 16) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE1_MAC_ADDR >> 8) & 0xFF),
-        (uint8_t)(CONFIG_RFS_DEVICE1_MAC_ADDR & 0xFF)
-    }; // Device 1 MAC from Kconfig
-
-    static constexpr uint8_t kDeviceMac2[6] = {
-        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 40) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 32) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 24) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 16) & 0xFF),
-        (uint8_t)((CONFIG_RFS_DEVICE2_MAC_ADDR >> 8) & 0xFF),
-        (uint8_t)(CONFIG_RFS_DEVICE2_MAC_ADDR & 0xFF)
-    }; // Device 2 MAC from Kconfig
     
     // Configuration constants
-    static constexpr chip::EndpointId kDevice1EndpointId = 2;  // Endpoint for device 1
-    static constexpr chip::EndpointId kDevice2EndpointId = 3;  // Endpoint for device 2
     static constexpr float kOccupancyThreshold = CONFIG_RFS_OCCUPANCY_THRESHOLD; // threshold indicates occupancy
     static constexpr uint32_t kRFSensingHoldTimeNormal = 3 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
     static constexpr uint32_t kRFSensingHoldTimeLowPower = 9 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;

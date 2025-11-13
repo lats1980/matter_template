@@ -34,22 +34,6 @@ config HOLD_TIME_LIMIT_DEFAULT_SEC
 	  Default time in seconds that the occupancy state remains "occupied"
 	  after motion is detected.
 
-config RFS_DEVICE1_MAC_ADDR
-	hex "RF Sensing Device 1 MAC Address"
-	default 0xAABBCCDDEEFF
-	help
-	  MAC address of RF Sensing Device 1 (6 bytes as hex).
-	  Device 1 will use Matter endpoint 2 for occupancy sensing.
-	  Format: 0xAABBCCDDEEFF where AA is MSB, FF is LSB.
-
-config RFS_DEVICE2_MAC_ADDR
-	hex "RF Sensing Device 2 MAC Address" 
-	default 0xAABBCCDDEEFF
-	help
-	  MAC address of RF Sensing Device 2 (6 bytes as hex).
-	  Device 2 will use Matter endpoint 3 for occupancy sensing.
-	  Format: 0xAABBCCDDEEFF where AA is MSB, FF is LSB.
-
 config RFS_ACTIVATED_BY_PIR
 	bool "RF Sensing activated by PIR sensor"
 	help

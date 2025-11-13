@@ -30,23 +30,17 @@ using namespace chip::app::Clusters::OccupancySensing;
 using namespace chip::app::Clusters::OccupancySensing::Structs;
 using namespace chip::DeviceLayer;
 
-void OccupancySensorRFS::RfsEventHandler(struct bt_conn *conn, float distance)
+void OccupancySensorRFS::RfsEventHandler(uint8_t bond_idx, float distance)
 {
     LOG_DBG("Channel Sounding event received");
 
     if (distance < kOccupancyThreshold) {
         LOG_DBG("Distance %.2f below threshold %.1f - setting occupied", (double)distance, (double)kOccupancyThreshold);
 
-    	/* Store the remote device address for device identification */
-	    const bt_addr_le_t *remote_addr = bt_conn_get_dst(conn);
-        if (remote_addr) {
+        if (bond_idx >=0 && bond_idx < CONFIG_BT_MAX_PAIRED) {
             LOG_DBG("Confirmed connection to known RF sensing device");
-            if(channel_sounding_set_filter_by_addr(remote_addr) != 0) {
-                LOG_ERR("Failed to set Channel Sounding address filter");
-                return;
-            }
-            memcpy(OccupancySensorRFS::Instance().remote_device_addr, remote_addr->a.val, 6);
             OccupancySensorRFS::Instance().remote_address_valid = true;
+            OccupancySensorRFS::Instance().mConnectedDevice = bond_idx + 2; // Endpoint 2 for bond 0, endpoint 3 for bond 1
         } else {
             OccupancySensorRFS::Instance().remote_address_valid = false;
             LOG_ERR("Failed to get remote device address");
@@ -99,20 +93,7 @@ CHIP_ERROR OccupancySensorRFS::Init()
 chip::EndpointId OccupancySensorRFS::GetEndpointId() const
 {
     if (remote_address_valid) {
-        // Compare with known device MAC addresses
-        if (memcmp(remote_device_addr, kDeviceMac1, 6) == 0) {
-            LOG_DBG("Detected Device 1 - using endpoint 2");
-            mConnectedDevice = kDevice1EndpointId;
-        } else if (memcmp(remote_device_addr, kDeviceMac2, 6) == 0) {
-            LOG_DBG("Detected Device 2 - using endpoint 3");
-            mConnectedDevice = kDevice2EndpointId;
-        } else {
-            // Log the actual remote MAC address for debugging
-            LOG_WRN("Detected unknown remote device MAC: %02X:%02X:%02X:%02X:%02X:%02X - filtering should have prevented this", 
-                    remote_device_addr[5], remote_device_addr[4], remote_device_addr[3],
-                    remote_device_addr[2], remote_device_addr[1], remote_device_addr[0]);
-            mConnectedDevice = kInvalidEndpointId;
-        }
+        LOG_INF("GetEndpointId mConnectedDevice: %d", mConnectedDevice);
     } else {
         LOG_WRN("Failed to get remote device MAC address from channel sounding");
         mConnectedDevice = kInvalidEndpointId;
