@@ -17,7 +17,7 @@
  * types of occupancy sensors (PIR, RF Sensing, etc.) including:
  * - SetOccupancyState() method
  * - IsOccupied() method
- * - GetEndpointId() method
+ * - IsValidEndpoint() pure virtual method
  * - Common timer handling for occupancy timeout
  * - Matter cluster instance management
  */
@@ -44,7 +44,7 @@ public:
      * @param occupied true if occupied, false if unoccupied
      * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
      */
-    CHIP_ERROR SetOccupancyState(bool occupied);
+    CHIP_ERROR SetOccupancyState(bool occupied, chip::EndpointId endpointId);
 
     /**
      * @brief Get the current occupancy state
@@ -54,16 +54,18 @@ public:
      * 
      * @return true if occupied, false if unoccupied
      */
-    virtual bool IsOccupied();
+    virtual bool IsOccupied(chip::EndpointId endpointId);
 
     /**
-     * @brief Get the endpoint ID for the occupancy sensor
+     * @brief Validate if the given endpoint ID is valid for this sensor
      * 
      * Pure virtual method that must be implemented by derived classes
+     * to specify which endpoints they support
      * 
-     * @return chip::EndpointId The endpoint ID
+     * @param endpointId The endpoint ID to validate
+     * @return true if valid, false otherwise
      */
-    virtual chip::EndpointId GetEndpointId() const = 0;
+    virtual bool IsValidEndpoint(chip::EndpointId endpointId) const = 0;
 
 protected:
     /**

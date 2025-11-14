@@ -121,7 +121,7 @@ void OccupancySensorPIR::PirWorkHandler(k_work *work)
     if (pinValue > 0) {
         // PIR sensor detected motion - set occupied state
         Nrf::PostTask([sensor] { 
-            CHIP_ERROR err = sensor->SetOccupancyState(true);
+            CHIP_ERROR err = sensor->SetOccupancyState(true, OccupancySensorPIR::Instance().kPirEndpoint);
             if (err != CHIP_NO_ERROR) {
                 LOG_ERR("Failed to set occupied state: %" CHIP_ERROR_FORMAT, err.Format());
             }

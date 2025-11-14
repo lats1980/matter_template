@@ -24,14 +24,13 @@ using namespace chip::app::Clusters::OccupancySensing;
 using namespace chip::app::Clusters::OccupancySensing::Structs;
 using namespace chip::DeviceLayer;
 
-CHIP_ERROR OccupancySensorBase::SetOccupancyState(bool occupied)
+CHIP_ERROR OccupancySensorBase::SetOccupancyState(bool occupied, chip::EndpointId endpointId)
 {
     if (!mInitialized) {
         LOG_ERR("Occupancy sensor not initialized");
         return CHIP_ERROR_INCORRECT_STATE;
     }
 
-    chip::EndpointId endpointId = GetEndpointId();
     if (endpointId == kInvalidEndpointId) {
         LOG_ERR("Invalid endpoint ID");
         return CHIP_ERROR_INVALID_ARGUMENT;
@@ -89,10 +88,8 @@ CHIP_ERROR OccupancySensorBase::SetOccupancyState(bool occupied)
     return CHIP_NO_ERROR;
 }
 
-bool OccupancySensorBase::IsOccupied()
+bool OccupancySensorBase::IsOccupied(chip::EndpointId endpointId)
 {
-    chip::EndpointId endpointId = GetEndpointId();
-
     if (endpointId == kInvalidEndpointId) {
         LOG_ERR("Invalid endpoint ID");
         return false;

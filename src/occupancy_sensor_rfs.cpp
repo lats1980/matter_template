@@ -50,7 +50,7 @@ void OccupancySensorRFS::RfsEventHandler(uint8_t bond_idx, float distance)
         }
 
         Nrf::PostTask([] {
-            CHIP_ERROR err = OccupancySensorRFS::Instance().SetOccupancyState(true);
+            CHIP_ERROR err = OccupancySensorRFS::Instance().SetOccupancyState(true, OccupancySensorRFS::Instance().mConnectedDevice);
             if (err != CHIP_NO_ERROR) {
                 LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
             }
@@ -90,18 +90,6 @@ CHIP_ERROR OccupancySensorRFS::Init()
     LOG_INF("RF Sensing occupancy sensor initialized successfully");
 
     return CHIP_NO_ERROR;
-}
-
-chip::EndpointId OccupancySensorRFS::GetEndpointId() const
-{
-    if (remote_address_valid) {
-        LOG_INF("GetEndpointId mConnectedDevice: %d", mConnectedDevice);
-    } else {
-        LOG_WRN("Failed to get remote device MAC address from channel sounding");
-        mConnectedDevice = kInvalidEndpointId;
-    }
-
-    return mConnectedDevice;
 }
 
 void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)

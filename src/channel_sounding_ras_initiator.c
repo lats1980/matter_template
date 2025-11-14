@@ -407,15 +407,6 @@ static void connected_cb(struct bt_conn *conn, uint8_t err)
 	if (info.role == BT_CONN_ROLE_PERIPHERAL) {
 		return;
 	}
-#if 0
-	/* Store the remote device address for device identification */
-	const bt_addr_le_t *remote_addr = bt_conn_get_dst(conn);
-	if (remote_addr) {
-		LOG_INF("Confirmed connection to known RF sensing device");
-	} else {
-		LOG_ERR("Failed to get remote device address");
-	}
-#endif
 	k_sem_give(&sem_cs_control);
 }
 
@@ -784,8 +775,10 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		}
 		set_channel_sounding_state(CS_STATE_STOPPED);
 		if (cs_procedure_running) {
+			LOG_INF("Waiting for inactive interval: %u ms", cs_inactive_interval);
 			k_sem_take(&sem_cs_control, K_MSEC(cs_inactive_interval));
 		} else {
+			LOG_INF("Starting Channel Sounding procedure");
 			k_sem_take(&sem_cs_control, K_FOREVER);
 		}
 		set_channel_sounding_state(CS_STATE_CONNECTING);
@@ -801,6 +794,7 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 		// wait for connection
 		k_sem_take(&sem_cs_control, K_MSEC(CHANNEL_SOUNDING_SCAN_TIMEOUT_MS));
 		if (!connection) {
+			bt_scan_stop();
 			LOG_ERR("No connected device");
 			continue;
 		}
@@ -1140,5 +1134,9 @@ int channel_sounding_set_inactive_interval(uint32_t interval_ms)
 	}
 	cs_inactive_interval = interval_ms;
 	LOG_INF("Channel Sounding inactive interval set to %u ms", cs_inactive_interval);
+	if (get_channel_sounding_state() == CS_STATE_STOPPED) {
+		/* Notify the Channel Sounding thread to apply the new interval */
+		k_sem_give(&sem_cs_control);
+	}
 	return 0;
 }

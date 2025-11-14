@@ -49,33 +49,17 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 		} else {
 			ChipLogProgress(Zcl, "Occupancy State: UNOCCUPIED");
 		}
-		if (endpointId == OccupancySensorRFS::Instance().GetEndpointId()) {
+		if (OccupancySensorRFS::Instance().IsValidEndpoint(endpointId)) {
 			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED4).Set(*value);
-#if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
-			if (!(occupancy & (uint8_t)OccupancySensing::OccupancyBitmap::kOccupied)) {
-				// if RFS is not occupied and PIR is not occupied, stop RFS sensing
-				if (!OccupancySensorPIR::Instance().IsOccupied()) {
-					OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_STOPPED);
-				}
-			}
-#endif // CONFIG_RFS_ACTIVATED_BY_PIR
 		}
 #if defined(CONFIG_PIR_SUPPORT)
-		else if (endpointId == OccupancySensorPIR::Instance().GetEndpointId()) {
+		else if (OccupancySensorPIR::Instance().IsValidEndpoint(endpointId)) {
 			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED3).Set(*value);
 #if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
 			if (occupancy & (uint8_t)OccupancySensing::OccupancyBitmap::kOccupied) {
-				// if PIR is occupied but RFS is not, start RFS sensing
-				if (!OccupancySensorRFS::Instance().IsOccupied()) {
-					OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
-				}
-				// if PIR is occupied and RFS is occupied, do nothing
+				OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
 			} else {
-				// if PIR is not occupied and RFS is not occupied, stop RFS sensing
-				if (!OccupancySensorRFS::Instance().IsOccupied()) {
-					OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_STOPPED);
-				}
-				// if PIR is not occupied but RFS is occupied, do nothing
+				OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_LOW_POWER);
 			}
 #endif // CONFIG_RFS_ACTIVATED_BY_PIR
 		}

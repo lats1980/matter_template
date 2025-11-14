@@ -48,13 +48,17 @@ public:
     CHIP_ERROR Init() override;
 
     /**
-     * @brief Get the endpoint ID for the occupancy sensor
+     * @brief Validate if the given endpoint ID is valid for this sensor
      * 
-     * Returns endpoint 2 for device 1, endpoint 3 for device 2
+     * Implementation of pure virtual method from base class
      * 
-     * @return chip::EndpointId The endpoint ID based on connected device
+     * @param endpointId The endpoint ID to validate
+     * @return true if valid, false otherwise
      */
-    chip::EndpointId GetEndpointId() const override;
+    bool IsValidEndpoint(chip::EndpointId endpointId) const override
+    {
+        return (endpointId >= kRfsFirstEndpoint) && (endpointId <= kRfsLastEndpoint);
+    }
 
     /**
      * @brief Get current RFS operating mode

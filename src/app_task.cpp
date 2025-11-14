@@ -43,7 +43,7 @@ void AppTask::MatterEventHandler(const ChipDeviceEvent *event, intptr_t /* unuse
                         ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
 				LOG_INF("Thread is provisioned and enabled");
 #if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
-				if (OccupancySensorPIR::Instance().IsOccupied()) {
+				if (OccupancySensorPIR::Instance().IsOccupied(OccupancySensorPIR::Instance().GetEndpointId())) {
 					// if PIR is occupied, start RFS sensing
 					LOG_INF("PIR occupied - starting Channel Sounding procedure");
 					OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);

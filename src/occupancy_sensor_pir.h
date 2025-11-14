@@ -37,11 +37,27 @@ public:
     CHIP_ERROR Init() override;
 
     /**
+     * @brief Validate if the given endpoint ID is valid for this sensor
+     * 
+     * Implementation of pure virtual method from base class
+     * 
+     * @param endpointId The endpoint ID to validate
+     * @return true if valid, false otherwise
+     */
+    bool IsValidEndpoint(chip::EndpointId endpointId) const override
+    {
+        return endpointId == kPirEndpoint;
+    }
+
+    /**
      * @brief Get the endpoint ID for the occupancy sensor
      * 
      * @return chip::EndpointId The endpoint ID
      */
-    chip::EndpointId GetEndpointId() const override { return kPirEndpoint; }
+    chip::EndpointId GetEndpointId() const
+    {
+        return kPirEndpoint;
+    }
 
 private:
     OccupancySensorPIR() = default;
