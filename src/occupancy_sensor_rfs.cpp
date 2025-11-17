@@ -70,8 +70,7 @@ CHIP_ERROR OccupancySensorRFS::Init()
     // Initialize timers for deferred processing
     k_timer_init(&mModeIndicatorTimer, ModeIndicatorTimerHandler, nullptr);
     
-    // Set initial mode and update LED
-    mCurrentMode = RFS_MODE_STOPPED;
+    // Indicate initial mode via LED
     UpdateModeIndicatorLED();
 
     // Initialize Matter OccupancySensing cluster instance with RF Sensing feature
@@ -92,99 +91,20 @@ CHIP_ERROR OccupancySensorRFS::Init()
     return CHIP_NO_ERROR;
 }
 
-void OccupancySensorRFS::SetRFSMode(rfs_mode_t mode)
-{
-    if (mode == mCurrentMode) {
-        LOG_DBG("Already in requested mode: %d", mode);
-        return;
-    }
-
-    if(!ConnectivityMgrImpl().IsIPv6NetworkProvisioned() ||
-                !ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
-        LOG_INF("Thread not ready - only allowing STOPPED mode");
-        if (mode != RFS_MODE_STOPPED) {
-            return;
-        }
-    }
-
-    rfs_mode_t old_mode = mCurrentMode;
-    mCurrentMode = mode;
-    
-    const char* old_mode_str = (old_mode == RFS_MODE_NORMAL) ? "NORMAL" : 
-                              (old_mode == RFS_MODE_LOW_POWER) ? "LOW_POWER" : "STOPPED";
-    const char* new_mode_str = (mode == RFS_MODE_NORMAL) ? "NORMAL" : 
-                              (mode == RFS_MODE_LOW_POWER) ? "LOW_POWER" : "STOPPED";
-    
-    LOG_INF("RFS Mode changed: %s -> %s", old_mode_str, new_mode_str);
-    
-    // Update LED indication
-    UpdateModeIndicatorLED();
- 
-    // Get the sensor instance using singleton pattern
-    OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
-    
-    // Adjust RF sensing behavior based on mode
-    switch (mode) {
-        case RFS_MODE_NORMAL:
-            Nrf::PostTask([sensor] {
-                for (chip::EndpointId endpoint = kRfsFirstEndpoint; endpoint <= kRfsLastEndpoint; endpoint++) {
-                    CHIP_ERROR err = SetHoldTime(endpoint, kRFSensingHoldTimeNormal);
-                    if (err != CHIP_NO_ERROR) {
-                        LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
-                    }
-                }
-            });
-            channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS);
-            channel_sounding_procedure_enable(true);
-            break;
-        case RFS_MODE_LOW_POWER:
-            Nrf::PostTask([sensor] {
-                for (chip::EndpointId endpoint = kRfsFirstEndpoint; endpoint <= kRfsLastEndpoint; endpoint++) {
-                    CHIP_ERROR err = SetHoldTime(endpoint, kRFSensingHoldTimeLowPower);
-                    if (err != CHIP_NO_ERROR) {
-                        LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
-                    }
-                }
-            });
-            channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS);
-            channel_sounding_procedure_enable(true);
-            break;
-            
-        case RFS_MODE_STOPPED:
-            channel_sounding_procedure_enable(false);
-            break;
-    }
-}
-
-void OccupancySensorRFS::ToggleRFSMode()
-{
-    rfs_mode_t new_mode;
-    
-    switch (mCurrentMode) {
-        case RFS_MODE_NORMAL:
-            new_mode = RFS_MODE_LOW_POWER;
-            break;
-        case RFS_MODE_LOW_POWER:
-            new_mode = RFS_MODE_STOPPED;
-            break;
-        case RFS_MODE_STOPPED:
-        default:
-            new_mode = RFS_MODE_NORMAL;
-            break;
-    }
-    
-    SetRFSMode(new_mode);
-}
-
 void OccupancySensorRFS::HandleButtonEvent(bool button_pressed)
 {
     static bool button_handled = false;
     
     if (button_pressed && !button_handled) {
         // Button press - toggle mode
-        LOG_DBG("Button 1 pressed - toggling RFS mode");
-        ToggleRFSMode();
+        LOG_INF("Button 1 pressed - toggling RFS mode");
+        if (channel_sounding_is_preemptive_mode() == true) {
+            channel_sounding_set_preemptive_mode(false);
+        } else {
+            channel_sounding_set_preemptive_mode(true);
+        }
         button_handled = true;
+        UpdateModeIndicatorLED();
     } else if (!button_pressed) {
         // Button released - reset handler flag
         button_handled = false;
@@ -193,32 +113,16 @@ void OccupancySensorRFS::HandleButtonEvent(bool button_pressed)
 
 void OccupancySensorRFS::UpdateModeIndicatorLED()
 {
-    switch (mCurrentMode) {
-        case RFS_MODE_NORMAL:
-            // Stop blinking timer and set LED1 solid on
-            k_timer_stop(&mModeIndicatorTimer);
-            dk_set_led_on(DK_LED2);
-            LOG_INF("LED1: Normal mode - solid ON");
-            break;
-            
-        case RFS_MODE_LOW_POWER:
-            // Start blinking timer - LED will blink every 1 second
-            mLedBlinkState = false;
-            dk_set_led_off(DK_LED2);
-            k_timer_start(&mModeIndicatorTimer, K_MSEC(1000), K_MSEC(1000));
-            LOG_INF("LED1: Low power mode - blinking every 1s");
-            break;
-            
-        case RFS_MODE_STOPPED:
-            // Stop blinking timer and turn LED1 off
-            k_timer_stop(&mModeIndicatorTimer);
-            dk_set_led_off(DK_LED2);
-            LOG_INF("LED1: Stopped mode - OFF");
-            break;
-            
-        default:
-            LOG_ERR("Unknown RFS mode: %d", mCurrentMode);
-            break;
+    if (channel_sounding_is_preemptive_mode()) {
+        // Preemptive mode - start blinking timer - LED will blink every 1 second
+        dk_set_led_off(DK_LED2);
+        k_timer_start(&mModeIndicatorTimer, K_MSEC(1000), K_MSEC(1000));
+        LOG_INF("LED2: Preemptive mode - blinking every 1s");
+    } else {
+        // Non-preemptive mode - stop blinking timer and set LED2 solid on
+        k_timer_stop(&mModeIndicatorTimer);
+        dk_set_led_on(DK_LED2);
+        LOG_INF("LED2: Non Preemptive mode - solid ON");
     }
 }
 
@@ -229,13 +133,11 @@ void OccupancySensorRFS::ModeIndicatorTimerHandler(k_timer *timer)
     // Get the sensor instance (singleton)
     OccupancySensorRFS *sensor = &OccupancySensorRFS::Instance();
     
-    if (sensor->mCurrentMode == RFS_MODE_LOW_POWER) {
-        sensor->mLedBlinkState = !sensor->mLedBlinkState;
-        if (sensor->mLedBlinkState) {
-            dk_set_led_on(DK_LED2);
-        } else {
-            dk_set_led_off(DK_LED2);
-        }
+    sensor->mLedBlinkState = !sensor->mLedBlinkState;
+    if (sensor->mLedBlinkState) {
+        dk_set_led_on(DK_LED2);
+    } else {
+        dk_set_led_off(DK_LED2);
     }
 }
 

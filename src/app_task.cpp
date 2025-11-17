@@ -42,19 +42,10 @@ void AppTask::MatterEventHandler(const ChipDeviceEvent *event, intptr_t /* unuse
             if(ConnectivityMgrImpl().IsIPv6NetworkProvisioned() &&
                         ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
 				LOG_INF("Thread is provisioned and enabled");
-#if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
-				if (OccupancySensorPIR::Instance().IsOccupied(OccupancySensorPIR::Instance().GetEndpointId())) {
-					// if PIR is occupied, start RFS sensing
-					LOG_INF("PIR occupied - starting Channel Sounding procedure");
-					OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
-				}
-#else
-				LOG_INF("Starting Channel Sounding procedure");
-				OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
-#endif
+				channel_sounding_procedure_enable(true);
 			} else {
 				LOG_INF("Thread not ready - stopping Channel Sounding procedure");
-                OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_STOPPED);
+                channel_sounding_procedure_enable(false);
             }
             break;
 	default:
@@ -83,6 +74,9 @@ CHIP_ERROR AppTask::Init()
 #if defined(CONFIG_PIR_SUPPORT)
 	/* Initialize PIR occupancy sensor */
 	ReturnErrorOnFailure(OccupancySensorPIR::Instance().Init());
+#if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
+	channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS);
+#endif // CONFIG_RFS_ACTIVATED_BY_PIR
 #endif
 
 	return Nrf::Matter::StartServer();

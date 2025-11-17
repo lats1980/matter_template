@@ -111,7 +111,7 @@ void OccupancySensorPIR::PirInterruptCallback(const struct device *dev, struct g
 void OccupancySensorPIR::PirWorkHandler(k_work *work)
 {
     ARG_UNUSED(work);
-    
+
     // Get the sensor instance using singleton pattern
     OccupancySensorPIR *sensor = &OccupancySensorPIR::Instance();
     

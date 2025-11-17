@@ -92,6 +92,14 @@ static int channel_sounding_get_distance(float *distance);
 static uint8_t bond_count;
 static uint8_t found_index;
 
+static bool cs_preemptive_mode;
+static uint8_t priority_bond_indices[CONFIG_BT_MAX_PAIRED];
+#define MAX_PRIORITY_BONDS CONFIG_BT_MAX_PAIRED
+#define MIN_PRIORITY_BONDS 1
+#define UNPRIORITIZED_BOND 0
+
+static bool scan_add_bond_address(uint8_t index);
+
 static void store_distance_estimates(cs_de_report_t *p_report)
 {
 	int lock_state = k_mutex_lock(&distance_estimate_buffer_mutex, K_FOREVER);
@@ -658,6 +666,50 @@ static int scan_init(void)
 	return 0;
 }
 
+static void update_priority_bond_indices(void)
+{
+	for (int i = 0; i < CONFIG_BT_MAX_PAIRED; i++) {
+		if (priority_bond_indices[i] != UNPRIORITIZED_BOND &&
+		    priority_bond_indices[i] < MAX_PRIORITY_BONDS) {
+			priority_bond_indices[i]++;
+		}
+	}
+}
+
+static int scan_init_preemptive(void)
+{
+	int err;
+	uint8_t filter_mode = 0;
+
+	bt_scan_stop();
+	bt_scan_filter_remove_all();
+
+	err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_UUID, BT_UUID_RANGING_SERVICE);
+	if (err) {
+		LOG_ERR("UUID filter cannot be added (err %d", err);
+		return err;
+	}
+	filter_mode |= BT_SCAN_UUID_FILTER;
+
+	for (uint8_t i = 0; i < CONFIG_BT_MAX_PAIRED; i++) {
+		if (priority_bond_indices[i] == MAX_PRIORITY_BONDS) {
+			if (scan_add_bond_address(i) == true) {
+				LOG_INF("Added bond index %d to scan filter", i);
+				filter_mode = BT_SCAN_ADDR_FILTER;
+			}
+		}
+	}
+	update_priority_bond_indices();
+
+	err = bt_scan_filter_enable(filter_mode, false);
+	if (err) {
+		LOG_ERR("Filters cannot be turned on (err %d)", err);
+		return err;
+	}
+
+	return 0;
+}
+
 static void auth_cancel(struct bt_conn *conn)
 {
 	char addr[BT_ADDR_LE_STR_LEN];
@@ -735,6 +787,33 @@ static bool get_bond_index(const bt_addr_le_t *target_addr, uint8_t *out_index) 
 	return true;
 }
 
+void bond_addr_cb(const struct bt_bond_info *info, void *user_data) {
+	uint8_t *index = user_data;
+
+	if (bond_count == *index) {
+		int err;
+		/* Add specified device address to the filter */
+		err = bt_scan_filter_add(BT_SCAN_FILTER_TYPE_ADDR, &info->addr);
+		if (err) {
+			LOG_ERR("Scanning filters cannot be set (err %d)", err);
+		}
+		found_index = bond_count;
+	}
+	bond_count++;
+}
+
+bool scan_add_bond_address(uint8_t index) {
+	bond_count = 0;
+	found_index = CONFIG_BT_MAX_PAIRED;
+
+	bt_foreach_bond(BT_ID_DEFAULT, bond_addr_cb, &index);
+	if (found_index == CONFIG_BT_MAX_PAIRED) {
+		LOG_INF("No bond found for the given index");
+		return false;
+	}
+	return true;
+}
+
 static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -782,7 +861,11 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			k_sem_take(&sem_cs_control, K_FOREVER);
 		}
 		set_channel_sounding_state(CS_STATE_CONNECTING);
-		err = scan_init();
+		if (cs_preemptive_mode) {
+			err = scan_init_preemptive();
+		} else {
+			err = scan_init();
+		}
 		if (err) {
 			LOG_ERR("Scan init failed (err %d)", err);
 		}
@@ -808,6 +891,9 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			LOG_ERR("No connected device");
 			continue;
 		}
+		uint8_t bond_index;
+		get_bond_index(bt_conn_get_dst(connection), &bond_index);
+		priority_bond_indices[bond_index] = MIN_PRIORITY_BONDS;
 		static struct bt_gatt_exchange_params mtu_exchange_params = {.func = mtu_exchange_cb};
 		err = bt_gatt_exchange_mtu(connection, &mtu_exchange_params);
 		if (err) {
@@ -1139,4 +1225,17 @@ int channel_sounding_set_inactive_interval(uint32_t interval_ms)
 		k_sem_give(&sem_cs_control);
 	}
 	return 0;
+}
+
+int channel_sounding_set_preemptive_mode(bool enable)
+{
+	cs_preemptive_mode = enable;
+	LOG_INF("Set Channel Sounding mode %s", cs_preemptive_mode ? "Preemptive" : "Non Preemptive");
+	return 0;
+}
+
+bool channel_sounding_is_preemptive_mode(void)
+{
+	LOG_INF("Channel Sounding mode %s", cs_preemptive_mode ? "Preemptive" : "Non Preemptive");
+	return cs_preemptive_mode;
 }

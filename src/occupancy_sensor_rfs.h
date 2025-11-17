@@ -12,15 +12,6 @@
 using namespace chip;
 
 /**
- * @brief RFS Operating modes
- */
-typedef enum {
-    RFS_MODE_NORMAL = 0,     /**< Normal RF sensing mode */
-    RFS_MODE_LOW_POWER = 1,  /**< Low power RF sensing mode */
-    RFS_MODE_STOPPED = 2     /**< RF sensing stopped */
-} rfs_mode_t;
-
-/**
  * @brief RF Sensing Occupancy Sensor implementation for Matter
  * 
  * This class implements an RF Sensing occupancy sensor for Matter using
@@ -61,25 +52,6 @@ public:
     }
 
     /**
-     * @brief Get current RFS operating mode
-     * 
-     * @return Current RFS mode
-     */
-    rfs_mode_t GetRFSMode() const { return mCurrentMode; }
-
-    /**
-     * @brief Set RFS operating mode
-     * 
-     * @param mode New mode to set
-     */
-    void SetRFSMode(rfs_mode_t mode);
-
-    /**
-     * @brief Toggle RFS mode (cycles through normal -> low power -> stopped -> normal)
-     */
-    void ToggleRFSMode();
-
-    /**
      * @brief Handle button press events for mode switching
      * 
      * @param button_pressed true if button is pressed, false if released
@@ -110,8 +82,6 @@ private:
     
     // Configuration constants
     static constexpr float kOccupancyThreshold = CONFIG_RFS_OCCUPANCY_THRESHOLD; // threshold indicates occupancy
-    static constexpr uint32_t kRFSensingHoldTimeNormal = 3 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
-    static constexpr uint32_t kRFSensingHoldTimeLowPower = 9 * CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
     static constexpr chip::EndpointId kRfsFirstEndpoint = 1;
     static constexpr chip::EndpointId kRfsLastEndpoint = kRfsFirstEndpoint + CONFIG_BT_MAX_PAIRED - 1;
     
@@ -120,7 +90,7 @@ private:
     
     // State tracking
     mutable chip::EndpointId mConnectedDevice = kInvalidEndpointId; // Cache for connected device
-    rfs_mode_t mCurrentMode = RFS_MODE_NORMAL;  // Current RFS operating mode
     bool mLedBlinkState = false;  // LED blink state for low power mode
     uint32_t kRfSensingOperationIntervalMs; // next operation interval based on mode
+    bool mPreemptiveMode = false; // preemptive mode flag
 };

@@ -18,7 +18,7 @@ config SIMULATED_PIR_SENSOR
 	  Enable this option to simulate PIR sensor input using a button.
 
 config HOLD_TIME_LIMIT_MIN_SEC
-	int "PIR sensor hold time limit (min)"
+	int "Occupancy sensor hold time limit (min)"
 	default 1
 	range 1 600
 	help
@@ -40,6 +40,30 @@ config HOLD_TIME_LIMIT_DEFAULT_SEC
 	help
 	  Default time in seconds that the occupancy state remains "occupied"
 	  after motion is detected.
+
+config HOLD_TIME_LIMIT_RFS_NORMAL_SEC
+	int "RF Sensing occupancy hold time limit (normal)"
+	default 30
+	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
+	help
+	  Default time in seconds that the occupancy state remains "occupied"
+	  after motion is detected using RF Sensing.
+
+config HOLD_TIME_LIMIT_RFS_LOW_POWER_SEC
+	int "RF Sensing occupancy hold time limit (low power)"
+	default 180
+	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
+	help
+	  Default time in seconds that the occupancy state remains "occupied"
+	  after motion is detected using RF Sensing in low power mode.
+
+config HOLD_TIME_LIMIT_PIR_DEFAULT_SEC
+	int "PIR sensor occupancy hold time limit (default)"
+	default 10
+	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
+	help
+	  Default time in seconds that the occupancy state remains "occupied"
+	  after motion is detected using PIR sensor.
 
 config RFS_ACTIVATED_BY_PIR
 	bool "RF Sensing activated by PIR sensor"

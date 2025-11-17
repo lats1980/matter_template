@@ -65,6 +65,25 @@ int channel_sounding_procedure_enable(bool enable);
  */
 int channel_sounding_set_inactive_interval(uint32_t interval_ms);
 
+/**
+ * @brief Enable or disable preemptive mode for Channel Sounding
+ * 
+ * In preemptive mode, Channel Sounding procedures reconnect to
+ * last known devices with higher priority. In non-preemptive mode,
+ * devices are scanned and connected in the order they were last paired.
+ * 
+ * @param enable true to enable preemptive mode, false to disable
+ * @return 0 on success, negative error code on failure
+ */
+int channel_sounding_set_preemptive_mode(bool enable);
+
+/**
+ * @brief Check if Channel Sounding is in preemptive mode
+ * 
+ * @return true if preemptive mode is enabled, false otherwise
+ */
+bool channel_sounding_is_preemptive_mode();
+
 #ifdef __cplusplus
 }
 #endif

@@ -6,6 +6,8 @@
 
 #include "app_task.h"
 #include "board/board.h"
+#include "channel_sounding_ras_initiator.h"
+#include "app/task_executor.h"
 
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <app-common/zap-generated/ids/Attributes.h>
@@ -57,9 +59,15 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED3).Set(*value);
 #if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
 			if (occupancy & (uint8_t)OccupancySensing::OccupancyBitmap::kOccupied) {
-				OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_NORMAL);
+				channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS);
+				Nrf::PostTask([endpointId] { 
+					SetHoldTime(endpointId, CONFIG_HOLD_TIME_LIMIT_RFS_NORMAL_SEC);
+				});
 			} else {
-				OccupancySensorRFS::Instance().SetRFSMode(RFS_MODE_LOW_POWER);
+				channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS);
+				Nrf::PostTask([endpointId] { 
+					SetHoldTime(endpointId, CONFIG_HOLD_TIME_LIMIT_RFS_LOW_POWER_SEC);
+				});
 			}
 #endif // CONFIG_RFS_ACTIVATED_BY_PIR
 		}
@@ -75,6 +83,10 @@ void emberAfOccupancySensingClusterInitCallback(EndpointId endpointId)
 	}
 
 	uint16_t holdTime = CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
+
+	if (OccupancySensorRFS::Instance().IsValidEndpoint(endpointId)) {
+		holdTime = CONFIG_HOLD_TIME_LIMIT_RFS_NORMAL_SEC;
+	}
 	OccupancySensing::Structs::HoldTimeLimitsStruct::Type holdTimeLimits = {
 		.holdTimeMin     = CONFIG_HOLD_TIME_LIMIT_MIN_SEC,
 		.holdTimeMax     = CONFIG_HOLD_TIME_LIMIT_MAX_SEC,
