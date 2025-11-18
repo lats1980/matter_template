@@ -743,7 +743,6 @@ static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 		bt_security_err_to_str(reason));
 
 	LOG_WRN("Bonding required but pairing failed, disconnecting: %s", addr);
-	bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
 }
 
 static struct bt_conn_auth_cb conn_auth_callbacks = {
@@ -887,12 +886,17 @@ static void channel_sounding_thread_entry(void *p1, void *p2, void *p3)
 			continue;
 		}
 		WAIT_AND_CHECK_CS_RESULT(CHANNEL_SOUNDING_OP_TIMEOUT_MS);
-		if (!connection) {
-			LOG_ERR("No connected device");
+		if (cs_op_result) {
+			LOG_ERR("Security failed");
 			continue;
 		}
 		uint8_t bond_index;
-		get_bond_index(bt_conn_get_dst(connection), &bond_index);
+		if (get_bond_index(bt_conn_get_dst(connection), &bond_index) == false) {
+			LOG_WRN("Could not get bond index for connected device");
+			continue;
+		} else  {
+			LOG_INF("Connected device bond index: %d", bond_index);
+		}
 		priority_bond_indices[bond_index] = MIN_PRIORITY_BONDS;
 		static struct bt_gatt_exchange_params mtu_exchange_params = {.func = mtu_exchange_cb};
 		err = bt_gatt_exchange_mtu(connection, &mtu_exchange_params);
