@@ -38,16 +38,22 @@ void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChan
 void AppTask::MatterEventHandler(const ChipDeviceEvent *event, intptr_t /* unused */)
 {
 	switch (event->Type) {
-        case DeviceEventType::kThreadStateChange:
-            if(ConnectivityMgrImpl().IsIPv6NetworkProvisioned() &&
-                        ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
+		case DeviceEventType::kThreadStateChange:
+			if(ConnectivityMgrImpl().IsIPv6NetworkProvisioned() &&
+						ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
 				LOG_INF("Thread is provisioned and enabled");
+#if !defined(CONFIG_RFS_ACTIVATED_BY_PIR)
+				LOG_INF("Enabling Channel Sounding procedure");
 				channel_sounding_procedure_enable(true);
+#endif
 			} else {
-				LOG_INF("Thread not ready - stopping Channel Sounding procedure");
-                channel_sounding_procedure_enable(false);
-            }
-            break;
+				LOG_INF("Thread is not ready");
+#if !defined(CONFIG_RFS_ACTIVATED_BY_PIR)
+				LOG_INF("Disabling Channel Sounding procedure");
+				channel_sounding_procedure_enable(false);
+#endif	
+			}
+			break;
 	default:
 		break;
 	}
@@ -74,9 +80,6 @@ CHIP_ERROR AppTask::Init()
 #if defined(CONFIG_PIR_SUPPORT)
 	/* Initialize PIR occupancy sensor */
 	ReturnErrorOnFailure(OccupancySensorPIR::Instance().Init());
-#if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
-	channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS);
-#endif // CONFIG_RFS_ACTIVATED_BY_PIR
 #endif
 
 	return Nrf::Matter::StartServer();

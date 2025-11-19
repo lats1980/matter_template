@@ -52,6 +52,22 @@ public:
     }
 
     /**
+     * @brief Check if a specific RF Sensing endpoint is occupied
+     * 
+     * @param endpointId The endpoint ID to check (optional, checks all if not provided)
+     * @return true if the endpoint is occupied, false otherwise
+     */
+    bool IsOccupied(chip::EndpointId endpointId = kInvalidEndpointId) const;
+
+    /**
+     * @brief Set the hold time for occupancy state
+     * 
+     * @param holdTimeSec Hold time in seconds
+     * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
+     */
+    CHIP_ERROR SetHoldTime(uint16_t holdTimeSec);
+
+    /**
      * @brief Handle button press events for mode switching
      * 
      * @param button_pressed true if button is pressed, false if released

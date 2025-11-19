@@ -141,3 +141,43 @@ void OccupancySensorRFS::ModeIndicatorTimerHandler(k_timer *timer)
     }
 }
 
+bool OccupancySensorRFS::IsOccupied(chip::EndpointId endpointId) const
+{
+    if (endpointId != kInvalidEndpointId) {
+        // Check specific endpoint
+        if (!IsValidEndpoint(endpointId)) {
+            LOG_ERR("Invalid endpoint ID: %u", endpointId);
+            return false;
+        }
+        chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
+        Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(endpointId, &currentOccupancy);
+        VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
+        return currentOccupancy.Has(Clusters::OccupancySensing::OccupancyBitmap::kOccupied);
+    } else {
+        // Check all RF Sensing endpoints
+        for (chip::EndpointId ep = kRfsFirstEndpoint; ep <= kRfsLastEndpoint; ++ep) {
+            chip::BitMask<Clusters::OccupancySensing::OccupancyBitmap> currentOccupancy;
+            Protocols::InteractionModel::Status status = OccupancySensing::Attributes::Occupancy::Get(ep, &currentOccupancy);
+            VerifyOrDie(status == Protocols::InteractionModel::Status::Success);
+            if (currentOccupancy.Has(Clusters::OccupancySensing::OccupancyBitmap::kOccupied)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+CHIP_ERROR OccupancySensorRFS::SetHoldTime(uint16_t holdTimeSec)
+{
+    // Set hold time for all RF Sensing endpoints
+    for (chip::EndpointId ep = kRfsFirstEndpoint; ep <= kRfsLastEndpoint; ++ep) {
+        CHIP_ERROR err = OccupancySensing::SetHoldTime(ep, holdTimeSec);
+        if (err != CHIP_NO_ERROR) {
+            LOG_ERR("Failed to set OccupancySensorType for endpoint %u: %" CHIP_ERROR_FORMAT, ep, err.Format());
+            return err;
+        }
+    }
+    LOG_INF("Set RFSHoldTime to %u seconds for all RF Sensing endpoints", holdTimeSec);
+
+    return CHIP_NO_ERROR;
+}
