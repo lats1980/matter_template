@@ -8,6 +8,7 @@
 #include "board/board.h"
 #include "channel_sounding_ras_initiator.h"
 #include "app/task_executor.h"
+#include <platform/CHIPDeviceLayer.h>
 
 #include <app-common/zap-generated/attributes/Accessors.h>
 #include <app-common/zap-generated/ids/Attributes.h>
@@ -26,6 +27,7 @@ using namespace ::chip;
 using namespace ::chip::app;
 using namespace ::chip::app::Clusters;
 using namespace ::chip::app::Clusters::OccupancySensing;
+using namespace ::chip::DeviceLayer;
 
 void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &attributePath, uint8_t type,
 					   uint16_t size, uint8_t *value)
@@ -62,7 +64,10 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 			Nrf::GetBoard().GetLED(Nrf::DeviceLeds::LED3).Set(OccupancySensorPIR::Instance().IsOccupied(endpointId));
 #if defined(CONFIG_RFS_ACTIVATED_BY_PIR)
 			if (occupancy & (uint8_t)OccupancySensing::OccupancyBitmap::kOccupied) {
-				channel_sounding_procedure_enable(true);
+				if(ConnectivityMgrImpl().IsIPv6NetworkProvisioned() &&
+							ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
+					channel_sounding_procedure_enable(true);
+				}
 				// PIR detected occupancy - set normal mode
 				channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS);
 				Nrf::PostTask([endpointId] {
