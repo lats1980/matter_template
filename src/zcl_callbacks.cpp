@@ -68,21 +68,13 @@ void MatterPostAttributeChangeCallback(const chip::app::ConcreteAttributePath &a
 							ConnectivityMgrImpl().IsIPv6NetworkEnabled()) {
 					channel_sounding_procedure_enable(true);
 				}
-				// PIR detected occupancy - set normal mode
-				channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_NORMAL_INACTIVE_INTERVAL_MS);
-				Nrf::PostTask([endpointId] {
-					OccupancySensorRFS::Instance().SetHoldTime(CONFIG_HOLD_TIME_LIMIT_RFS_NORMAL_SEC);
-				});
 			} else {
 				if (!OccupancySensorRFS::Instance().IsOccupied()) {
 					// No occupancy from RFS - disable channel sounding
 					channel_sounding_procedure_enable(false);
 				} else {
-					// Still occupied by RFS - switch to low power mode
-					channel_sounding_set_inactive_interval(CONFIG_RFS_SENSING_LOW_POWER_INACTIVE_INTERVAL_MS);
-					Nrf::PostTask([endpointId] {
-						OccupancySensorRFS::Instance().SetHoldTime(CONFIG_HOLD_TIME_LIMIT_RFS_LOW_POWER_SEC);
-					});
+					// Still occupied by RFS - keep channel sounding enabled
+					ChipLogProgress(Zcl, "RFS still indicates occupancy - keep channel sounding enabled");
 				}
 			}
 #endif // CONFIG_RFS_ACTIVATED_BY_PIR
@@ -101,7 +93,7 @@ void emberAfOccupancySensingClusterInitCallback(EndpointId endpointId)
 	uint16_t holdTime = CONFIG_HOLD_TIME_LIMIT_DEFAULT_SEC;
 
 	if (OccupancySensorRFS::Instance().IsValidEndpoint(endpointId)) {
-		holdTime = CONFIG_HOLD_TIME_LIMIT_RFS_NORMAL_SEC;;
+		holdTime = CONFIG_HOLD_TIME_LIMIT_RFS_SEC;;
 	}
 	OccupancySensing::Structs::HoldTimeLimitsStruct::Type holdTimeLimits = {
 		.holdTimeMin	 = CONFIG_HOLD_TIME_LIMIT_MIN_SEC,

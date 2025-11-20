@@ -166,18 +166,31 @@ bool OccupancySensorRFS::IsOccupied(chip::EndpointId endpointId) const
         return false;
     }
 }
-
+#if 0
 CHIP_ERROR OccupancySensorRFS::SetHoldTime(uint16_t holdTimeSec)
 {
     // Set hold time for all RF Sensing endpoints
     for (chip::EndpointId ep = kRfsFirstEndpoint; ep <= kRfsLastEndpoint; ++ep) {
+        if(*OccupancySensing::GetHoldTimeForEndpoint(ep) == holdTimeSec) {
+            continue; // already set
+        }
         CHIP_ERROR err = OccupancySensing::SetHoldTime(ep, holdTimeSec);
         if (err != CHIP_NO_ERROR) {
             LOG_ERR("Failed to set OccupancySensorType for endpoint %u: %" CHIP_ERROR_FORMAT, ep, err.Format());
             return err;
+        }
+        if (IsOccupied(ep)) {
+            // Restart occupancy present timer with new hold time
+            Nrf::PostTask([ep] {
+                CHIP_ERROR err = OccupancySensorRFS::Instance().SetOccupancyState(true, ep);
+                if (err != CHIP_NO_ERROR) {
+                    LOG_ERR("Failed to set RF Sensing occupancy state: %" CHIP_ERROR_FORMAT, err.Format());
+                }
+            });
         }
     }
     LOG_INF("Set RFSHoldTime to %u seconds for all RF Sensing endpoints", holdTimeSec);
 
     return CHIP_NO_ERROR;
 }
+#endif

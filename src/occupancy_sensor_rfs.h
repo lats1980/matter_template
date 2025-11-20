@@ -58,7 +58,7 @@ public:
      * @return true if the endpoint is occupied, false otherwise
      */
     bool IsOccupied(chip::EndpointId endpointId = kInvalidEndpointId) const;
-
+#if 0
     /**
      * @brief Set the hold time for occupancy state
      * 
@@ -66,7 +66,7 @@ public:
      * @return CHIP_ERROR CHIP_NO_ERROR on success, error code otherwise
      */
     CHIP_ERROR SetHoldTime(uint16_t holdTimeSec);
-
+#endif
     /**
      * @brief Handle button press events for mode switching
      * 

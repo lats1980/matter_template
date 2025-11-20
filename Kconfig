@@ -41,24 +41,16 @@ config HOLD_TIME_LIMIT_DEFAULT_SEC
 	  Default time in seconds that the occupancy state remains "occupied"
 	  after motion is detected.
 
-config HOLD_TIME_LIMIT_RFS_NORMAL_SEC
-	int "RF Sensing occupancy hold time limit (normal)"
+config HOLD_TIME_LIMIT_RFS_SEC
+	int "RF Sensing occupancy hold time limit"
 	default 30
 	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
 	help
 	  Default time in seconds that the occupancy state remains "occupied"
 	  after motion is detected using RF Sensing.
 
-config HOLD_TIME_LIMIT_RFS_LOW_POWER_SEC
-	int "RF Sensing occupancy hold time limit (low power)"
-	default 180
-	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
-	help
-	  Default time in seconds that the occupancy state remains "occupied"
-	  after motion is detected using RF Sensing in low power mode.
-
-config HOLD_TIME_LIMIT_PIR_DEFAULT_SEC
-	int "PIR sensor occupancy hold time limit (default)"
+config HOLD_TIME_LIMIT_PIR_SEC
+	int "PIR sensor occupancy hold time limit"
 	default 10
 	range HOLD_TIME_LIMIT_MIN_SEC HOLD_TIME_LIMIT_MAX_SEC
 	help
