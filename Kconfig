@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
-mainmenu "Matter nRF Connect Template Example Application"
+mainmenu "Matter nRF Connect Occupancy Sensor Example Application"
 
 config PIR_SUPPORT
 	bool "PIR sensor support"

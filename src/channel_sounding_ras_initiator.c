@@ -5,7 +5,7 @@
  */
 
 /** @file
- *  @brief Channel Sounding Initiator with Ranging Requestor for Matter Template
+ *  @brief Channel Sounding Initiator with Ranging Requestor for Matter Occupancy Sensor
  */
 
 #include "channel_sounding_ras_initiator.h"

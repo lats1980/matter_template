@@ -1,12 +1,12 @@
 sample:
-  description: Matter Template sample
-  name: Matter Template
+  description: Matter Occupancy Sensor sample
+  name: Matter Occupancy Sensor
 common:
   tags:
     - sysbuild
     - ci_samples_matter
 tests:
-  sample.matter.template.debug:
+  sample.matter.occupancy_sensor.debug:
     sysbuild: true
     build_only: true
     extra_args:
@@ -27,7 +27,7 @@ tests:
       - nrf54l15dk/nrf54l15/cpuapp/ns
       - nrf54l15dk/nrf54l10/cpuapp
       - nrf54lm20dk/nrf54lm20a/cpuapp
-  sample.matter.template.release:
+  sample.matter.occupancy_sensor.release:
     sysbuild: true
     build_only: true
     extra_args:
@@ -49,7 +49,7 @@ tests:
       - nrf54l15dk/nrf54l15/cpuapp/ns
       - nrf54l15dk/nrf54l10/cpuapp
       - nrf54lm20dk/nrf54lm20a/cpuapp
-  sample.matter.template.smp_dfu:
+  sample.matter.occupancy_sensor.smp_dfu:
     sysbuild: true
     build_only: true
     extra_args:
@@ -71,32 +71,32 @@ tests:
       - nrf54l15dk/nrf54l15/cpuapp/ns
       - nrf54l15dk/nrf54l10/cpuapp
       - nrf54lm20dk/nrf54lm20a/cpuapp
-  sample.matter.template.release.internal:
+  sample.matter.occupancy_sensor.release.internal:
     sysbuild: true
     build_only: true
     extra_args:
       - FILE_SUFFIX=internal
-      - template_EXTRA_CONF_FILE=prj_release.conf
+      - occupancy_sensor_EXTRA_CONF_FILE=prj_release.conf
     integration_platforms:
       - nrf54l15dk/nrf54l15/cpuapp
       - nrf54lm20dk/nrf54lm20a/cpuapp
     platform_allow:
       - nrf54l15dk/nrf54l15/cpuapp
       - nrf54lm20dk/nrf54lm20a/cpuapp
-  sample.matter.template.release.internal.smp_dfu:
+  sample.matter.occupancy_sensor.release.internal.smp_dfu:
     sysbuild: true
     build_only: true
     extra_args:
       - FILE_SUFFIX=internal
       - CONFIG_CHIP_DFU_OVER_BT_SMP=y
-      - template_EXTRA_CONF_FILE=prj_release.conf
+      - occupancy_sensor_EXTRA_CONF_FILE=prj_release.conf
     integration_platforms:
       - nrf54l15dk/nrf54l15/cpuapp
       - nrf54lm20dk/nrf54lm20a/cpuapp
     platform_allow:
       - nrf54l15dk/nrf54l15/cpuapp
       - nrf54lm20dk/nrf54lm20a/cpuapp
-  sample.matter.template.cc3xx_backend:
+  sample.matter.occupancy_sensor.cc3xx_backend:
     sysbuild: true
     build_only: true
     extra_args:
@@ -107,7 +107,7 @@ tests:
     platform_allow:
       - nrf52840dk/nrf52840
       - nrf5340dk/nrf5340/cpuapp
-  sample.matter.template.smp_dfu.old_ec:
+  sample.matter.occupancy_sensor.smp_dfu.old_ec:
     sysbuild: true
     build_only: true
     extra_args:
@@ -118,13 +118,13 @@ tests:
       - nrf54l15dk/nrf54l15/cpuapp
     platform_allow:
       - nrf54l15dk/nrf54l15/cpuapp
-  sample.matter.template.certification:
+  sample.matter.occupancy_sensor.certification:
     sysbuild: true
     build_only: true
     extra_args:
       - CONFIG_NCS_SAMPLE_MATTER_CERTIFICATION=y
       - OVERLAY_CONFIG="../common/src/certification/thread_platform/overlay-thread_platform.conf"
-      - template_SNIPPET="diagnostic-logs;matter-debug"
+      - occupancy_sensor_SNIPPET="diagnostic-logs;matter-debug"
     integration_platforms:
       - nrf52840dk/nrf52840
       - nrf5340dk/nrf5340/cpuapp
